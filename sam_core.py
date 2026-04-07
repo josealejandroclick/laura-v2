@@ -53,6 +53,7 @@ from sessions import (
     necesita_compresion, comprimir_sesion
 )
 from tools import cotizar, registrar_lead, analizar_lead, verificar_zip, consultar_conocimiento
+from tools import ghl_registrar_contacto, ghl_agendar_cita, ghl_enviar_mensaje
 from heartbeat import (
     registrar_actividad,
     TOOL_SCHEMA as AGENDAR_SCHEMA,
@@ -71,15 +72,21 @@ TOOL_SCHEMAS = [
     analizar_lead.TOOL_SCHEMA,
     consultar_conocimiento.TOOL_SCHEMA,
     AGENDAR_SCHEMA,
+    ghl_registrar_contacto.TOOL_SCHEMA,
+    ghl_agendar_cita.TOOL_SCHEMA,
+    ghl_enviar_mensaje.TOOL_SCHEMA,
 ]
 
 TOOL_HANDLERS = {
-    "verificar_zip":          verificar_zip.ejecutar,
-    "cotizar_planes":         cotizar.ejecutar,
-    "registrar_lead":         registrar_lead.ejecutar,
-    "analizar_lead":          analizar_lead.ejecutar,
-    "consultar_conocimiento": consultar_conocimiento.ejecutar,
-    "agendar_tarea":          ejecutar_agendar,
+    "verificar_zip":              verificar_zip.ejecutar,
+    "cotizar_planes":             cotizar.ejecutar,
+    "registrar_lead":             registrar_lead.ejecutar,
+    "analizar_lead":              analizar_lead.ejecutar,
+    "consultar_conocimiento":     consultar_conocimiento.ejecutar,
+    "agendar_tarea":              ejecutar_agendar,
+    "ghl_registrar_contacto":     ghl_registrar_contacto.ejecutar,
+    "ghl_agendar_cita":           ghl_agendar_cita.ejecutar,
+    "ghl_enviar_mensaje":         ghl_enviar_mensaje.ejecutar,
 }
 
 # Tools que necesitan session_id como parámetro extra
