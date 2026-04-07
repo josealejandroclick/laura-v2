@@ -101,19 +101,17 @@ SALUDOS_INICIO = [
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = str(update.effective_chat.id)
+    # Solo limpiar sesión — NO enviar saludo aquí
+    # El primer mensaje del cliente dispara el saludo natural de Sara
     eliminar_sesion(chat_id)
     registrar_actividad(chat_id)
-    saludo = random.choice(SALUDOS_INICIO)
-    await update.message.reply_text(saludo)
-    logger.info(f"Nuevo usuario: {update.effective_user.first_name} (chat_id: {chat_id})")
+    logger.info(f"Sesión reiniciada: {update.effective_user.first_name} (chat_id: {chat_id})")
 
 
 async def cmd_nueva(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = str(update.effective_chat.id)
     eliminar_sesion(chat_id)
     registrar_actividad(chat_id)
-    saludo = random.choice(SALUDOS_INICIO)
-    await update.message.reply_text(saludo)
 
 
 async def cmd_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -145,12 +143,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for i, msg in enumerate(mensajes):
             if not msg.strip():
                 continue
-            if i > 0:
-                pausa = min(2.0, max(1.0, len(mensajes[i-1]) / 200))
-                await asyncio.sleep(pausa)
-                await update.effective_chat.send_action(ChatAction.TYPING)
-                await asyncio.sleep(0.8)
+            # Delay natural antes de cada mensaje — simula persona escribiendo
+            # Proporcional al largo del mensaje: ~50 chars/segundo de "escritura"
+            chars = len(msg)
+            delay_escritura = min(4.0, max(1.5, chars / 50))
+            await update.effective_chat.send_action(ChatAction.TYPING)
+            await asyncio.sleep(delay_escritura)
             await update.message.reply_text(msg)
+            # Pausa breve entre mensajes consecutivos
+            if i < len(mensajes) - 1:
+                await asyncio.sleep(0.8)
 
         logger.info(f"[{chat_id}] Sara respondió ({len(mensajes)} msgs)")
 
