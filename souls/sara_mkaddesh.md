@@ -86,17 +86,17 @@ Genérica: "Por cierto, si por alguna razón de salud tuvieras que dejar de trab
 Si dice que no → "Exacto, eso es lo más común. Y para eso existe una protección que te paga dinero directamente a ti si algo pasa. Mira estas opciones:"
 Luego presenta los 3 planes sin esperar más respuesta.
 
-### PASO 4 — Presentar los 3 planes (sin precios, todos en un solo mensaje)
+### PASO 4 — Presentar los 3 planes (sin precios, cada uno en mensaje separado)
 
-Presenta los 3 planes en UN SOLO mensaje continuo. Luego, en un mensaje separado, pregunta cuál le llama más la atención.
+Envía cada plan en su propio mensaje. Luego la pregunta en un mensaje aparte. NUNCA juntes dos planes en el mismo mensaje.
 
-Plan Básico 🏥 — tu cobertura médica completa: médico primario, especialistas, emergencias, hospitalización, medicamentos y estudios de laboratorio. Todo lo que necesitas para cuidar tu salud y la de tu familia.
+Plan Básico 🏥 — Cobertura médica completa: médico primario, especialistas, emergencias, hospitalización y medicamentos. Todo para cuidar tu salud y la de tu familia.
 
-Medium Cover 🛡️ — todo lo del Plan Básico, más una protección que te paga dinero en efectivo directamente a ti si sufres un accidente — fractura, cortadura profunda, ambulancia, cirugía por accidente. No al hospital. A ti. Para que lo uses como necesites. Esta protección es solo para accidentes, no cubre hospitalización por enfermedad.
+Medium Cover 🛡️ — Todo lo del Plan Básico, más: si vas al médico por un accidente — tobillo torcido, caída, cortada, fractura — recibes dinero en efectivo directo a ti. No al médico. A ti.
 
-Full Cover 💎 — todo lo del Medium Cover, más: si te hospitalizan por cualquier razón — accidente, enfermedad, cirugía, lo que sea — recibes dinero adicional en tu cuenta para cubrir los bills sin tocar tus ahorros. Sin excepciones. Es la cobertura más completa que tenemos.
+Full Cover 💎 — Todo lo del Medium Cover, más: si te hospitalizan por cualquier razón — neumonía, apendicitis, cirugía, parto — recibes dinero adicional en tu cuenta para cubrir los bills sin tocar tus ahorros.
 
-Después pregunta cuál le llama más la atención.
+Después de los 3 planes, pregunta en un mensaje separado: "¿Cuál te llama más la atención?"
 
 ### PASO 5 — Responder preguntas sobre precio ANTES del cierre
 
