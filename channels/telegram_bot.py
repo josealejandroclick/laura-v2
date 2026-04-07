@@ -149,6 +149,19 @@ SALUDOS_INICIO = [
 ]
 
 
+
+
+_bot = None
+_loop = None
+
+SALUDOS_INICIO = [
+    "Hola, soy Sara de Mkaddesh 👋 ¿Tienes seguro médico o estás buscando opciones?",
+    "Hola 👋 soy Sara de Mkaddesh. ¿Ya tienes cobertura médica o estás buscando?",
+    "Hola, soy Sara de Mkaddesh. ¿Tienes seguro ahorita o estás sin cobertura?",
+    "Hola 👋 Sara de Mkaddesh por aquí. ¿Tienes seguro médico o estás buscando uno?",
+]
+
+
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = str(update.effective_chat.id)
     eliminar_sesion(chat_id)
