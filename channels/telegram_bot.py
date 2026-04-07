@@ -58,107 +58,33 @@ def limpiar_markdown(texto: str) -> str:
 def dividir_en_mensajes(texto: str) -> list:
     """
     Divide la respuesta en mensajes separados.
-    Planes: cada uno en mensaje propio, nunca cortado en medio.
-    Texto largo: divide por párrafos completos.
+    - Cada párrafo (separado por \n\n) va en su propio mensaje
+    - Los planes van siempre en mensajes separados
+    - Nunca un mensaje supera 500 caracteres si tiene párrafos separables
     """
     marcadores = ['Plan Básico', 'Medium Cover', 'Full Cover']
     tiene_planes = sum(1 for m in marcadores if m in texto)
 
+    # Planes: dividir en cada marcador
     if tiene_planes >= 2:
-        # Dividir en cada marcador de plan — el plan completo va en su mensaje
-        partes = re.split(r'(?=Plan Básico|Medium Cover|Full Cover)', texto)
+        partes = re.split(r'(?=\bPlan Básico\b|\bMedium Cover\b|\bFull Cover\b)', texto)
         mensajes = [p.strip() for p in partes if p.strip()]
-        # Verificar que ninguna parte quedó cortada (debe contener emoji de plan)
-        validos = []
-        for p in mensajes:
-            validos.append(p)
-        return validos if len(validos) > 1 else [texto]
+        if len(mensajes) > 1:
+            return mensajes
 
-    # Sin planes — dividir por párrafos solo si es texto largo con párrafos claros
-    if len(texto) > 500 and '\n\n' in texto:
+    # Dividir siempre por párrafos dobles
+    if '\n\n' in texto:
         partes = [p.strip() for p in texto.split('\n\n') if p.strip()]
-        if len(partes) > 1 and all(len(p) > 15 for p in partes):
+        if len(partes) > 1:
+            return partes
+
+    # Dividir por salto de línea simple si hay más de una línea
+    if '\n' in texto:
+        partes = [p.strip() for p in texto.split('\n') if p.strip()]
+        if len(partes) > 1:
             return partes
 
     return [texto]
-
-
-
-# ============================================================
-# HANDLERS
-# ============================================================
-
-_bot = None
-_loop = None
-
-SALUDOS_INICIO = [
-    "Hola, soy Sara de Mkaddesh 👋 ¿Tienes seguro médico o estás buscando opciones?",
-    "Hola 👋 soy Sara de Mkaddesh. ¿Ya tienes cobertura médica o estás buscando?",
-    "Hola, soy Sara de Mkaddesh. ¿Tienes seguro ahorita o estás sin cobertura?",
-    "Hola 👋 Sara de Mkaddesh por aquí. ¿Tienes seguro médico o estás buscando uno?",
-]
-
-
-async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = str(update.effective_chat.id)
-    # Solo limpiar sesión — NO enviar saludo aquí
-    # El primer mensaje del cliente dispara el saludo natural de Sara
-    eliminar_sesion(chat_id)
-    registrar_actividad(chat_id)
-    logger.info(f"Sesión reiniciada: {update.effective_user.first_name} (chat_id: {chat_id})")
-
-
-async def cmd_nueva(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = str(update.effective_chat.id)
-    eliminar_sesion(chat_id)
-    registrar_actividad(chat_id)
-
-
-async def cmd_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = str(update.effective_chat.id)
-    info = obtener_info_sesion(chat_id)
-    await update.message.reply_text(
-        f"Sesión activa\nMensajes: {info.get('turnos', 0)}\nTamaño: {info.get('tamaño_kb', 0)} KB"
-    )
-
-
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = str(update.effective_chat.id)
-    texto = update.message.text
-    nombre = update.effective_user.first_name or "Usuario"
-
-    if not texto:
-        return
-
-    logger.info(f"[{chat_id}] {nombre}: {texto[:50]}...")
-    await update.effective_chat.send_action(ChatAction.TYPING)
-
-    try:
-        agente = crear_agente()
-        respuesta = procesar_mensaje(agente, chat_id, texto)
-
-        respuesta_limpia = limpiar_markdown(respuesta)
-        mensajes = dividir_en_mensajes(respuesta_limpia)
-
-        for i, msg in enumerate(mensajes):
-            if not msg.strip():
-                continue
-            # Delay natural antes de cada mensaje — simula persona escribiendo
-            # Proporcional al largo del mensaje: ~50 chars/segundo de "escritura"
-            chars = len(msg)
-            delay_escritura = min(4.0, max(1.5, chars / 50))
-            await update.effective_chat.send_action(ChatAction.TYPING)
-            await asyncio.sleep(delay_escritura)
-            await update.message.reply_text(msg)
-            # Pausa breve entre mensajes consecutivos
-            if i < len(mensajes) - 1:
-                await asyncio.sleep(0.8)
-
-        logger.info(f"[{chat_id}] Sara respondió ({len(mensajes)} msgs)")
-
-    except Exception as e:
-        logger.error(f"[{chat_id}] Error: {e}", exc_info=True)
-        await update.message.reply_text("Disculpa, tuve un problema técnico. ¿Puedes repetir eso?")
 
 
 def _enviar_async(chat_id: str, texto: str):
