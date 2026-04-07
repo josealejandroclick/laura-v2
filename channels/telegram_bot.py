@@ -58,41 +58,46 @@ def limpiar_markdown(texto: str) -> str:
 def dividir_en_mensajes(texto: str) -> list:
     """
     Divide la respuesta en mensajes separados.
-    - Si hay planes: todos los planes en UN solo mensaje, luego la pregunta final aparte
+    - Si hay planes: cada plan en su propio mensaje, pregunta final aparte
     - Si no hay planes: divide por párrafos dobles
     """
     MARCADORES = ['Plan Básico 🏥', 'Medium Cover 🛡', 'Full Cover 💎']
+    PREGUNTA = '¿Cuál te llama más la atención?'
     tiene_planes = sum(1 for m in MARCADORES if m in texto)
 
     if tiene_planes >= 2:
-        PREGUNTA = '¿Cuál te llama más la atención?'
-        
-        # Unir todas las líneas del bloque de planes en texto continuo
         lineas = texto.split('\n')
         intro_lineas = []
-        planes_lineas = []
+        bloques = []
+        buffer = []
         en_planes = False
-        
+
         for linea in lineas:
             strip = linea.strip()
-            if any(strip.startswith(m) for m in MARCADORES):
+            es_marcador = any(strip.startswith(m) for m in MARCADORES)
+
+            if es_marcador:
+                if buffer and en_planes:
+                    bloques.append(' '.join(b for b in buffer if b and b != PREGUNTA))
+                    buffer = []
                 en_planes = True
-            if en_planes:
-                planes_lineas.append(strip)
+                buffer.append(strip)
+            elif en_planes:
+                if strip and strip != PREGUNTA:
+                    buffer.append(strip)
             else:
                 if strip:
                     intro_lineas.append(strip)
-        
-        # Unir líneas de planes en un solo texto continuo
-        texto_planes = ' '.join(p for p in planes_lineas if p and p != PREGUNTA)
-        
+
+        if buffer:
+            bloques.append(' '.join(b for b in buffer if b and b != PREGUNTA))
+
         resultado = []
         if intro_lineas:
             resultado.append(' '.join(intro_lineas))
-        if texto_planes:
-            resultado.append(texto_planes)
+        resultado.extend([b for b in bloques if b.strip()])
         resultado.append(PREGUNTA)
-        
+
         return [m for m in resultado if m.strip()]
 
     # Sin planes — dividir por párrafos dobles
