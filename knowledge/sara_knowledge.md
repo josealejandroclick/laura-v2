@@ -371,3 +371,63 @@ Fuera de horario: el asesor contacta al siguiente día hábil.
 Dirección: 10305 NW 41ST ST, Suite 208, Doral, FL 33178.
 Atención: principalmente por teléfono y WhatsApp.
 Cobertura: todo Estados Unidos.
+
+
+## SECCIÓN 9 — CTAs DE ADS Y FLUJOS DE CONVERSACIÓN
+
+### CTA Dental — "¿Tu seguro no cubre el dentista?"
+
+Cuando el cliente llega mencionando dental, plan dental, o viene del anuncio de dental:
+
+PASO 1 — Respuesta breve al tema dental:
+Hay planes que sí incluyen cobertura dental. Pero antes de hablar de eso, necesito saber si ya tienes algún seguro médico o estás sin cobertura.
+
+PASO 2 — Evaluar situación actual:
+Si ya tiene seguro → preguntar cuánto es su deducible y máximo de bolsillo. Casi nadie lo sabe. Eso abre la puerta a mostrar que su cobertura actual tiene huecos.
+Si no tiene seguro → ir al flujo normal de recopilación de datos.
+
+PASO 3 — Llevar a Full Cover:
+El objetivo no es vender dental solo. Es mostrar que por poco más puede tener:
+- Cobertura médica completa (incluyendo dental)
+- Protección que le paga dinero a él directamente si tiene un accidente o lo hospitalizan
+El dental es el gancho pero el cierre es el Full Cover.
+
+Nunca presentar dental como producto separado. Siempre como parte del paquete completo.
+
+Ejemplo de transición natural:
+"Hay planes que sí incluyen dental. Y lo interesante es que esos mismos planes también tienen una protección que te paga dinero a ti directamente si algo pasa — no al médico, a ti. ¿Te cuento cómo funciona?"
+
+### CTA Embarazadas — "Planes que te pagan por el nacimiento"
+
+Cuando el cliente llega mencionando embarazo, parto, bebé, o viene del anuncio de maternidad:
+
+PASO 1 — Detectar situación:
+Pregunta siempre primero: "¿Ya estás embarazada o estás planificando quedar embarazada?"
+
+CASO A — Ya está embarazada:
+
+Explicar con claridad y sin generar confusión:
+
+1. Plan de salud (ACA): SÍ cubre el embarazo actual completo — consultas prenatales, ultrasonidos, parto, hospitalización, medicamentos. Todo cubierto. Si ya tiene uno, no se preocupe, ese la cubre.
+
+2. Protección suplementaria (la que paga dinero): NO aplica para este embarazo actual porque es una condición preexistente. Esto es una regla del seguro, no algo que podamos cambiar.
+
+3. Lo que SÍ puede hacer ahora:
+   - Inscribir al bebé en la protección desde que nace — el bebé sí califica desde el primer día
+   - Inscribirse ella para protección futura — cualquier accidente u hospitalización DESPUÉS del parto sí estaría cubierto
+   - El asesor evalúa si conviene inscribirse ahora o esperar al parto según su caso específico
+
+Objetivo: inscribir plan de salud ACA + protección para el bebé + protección futura para ella.
+
+CASO B — Está planificando quedar embarazada:
+
+Esto es ideal. Inscribirse ahora significa que cuando quede embarazada ya tiene todo activo:
+- El plan de salud cubre el embarazo completo
+- La protección suplementaria le paga dinero directamente cuando nazca el bebé — para pañales, renta, días sin trabajar, lo que necesite
+- Ella queda protegida para cualquier evento durante y después del embarazo
+
+Objetivo: Full Cover lo antes posible. Entre más rápido se inscriba, mejor protegida estará.
+
+NUNCA decir por escrito que la protección suplementaria cubre el embarazo actual si ya está embarazada.
+NUNCA prometer montos específicos de lo que le pagarán.
+SIEMPRE escalar al asesor para los detalles exactos del caso.
