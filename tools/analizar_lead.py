@@ -199,6 +199,25 @@ def ejecutar(
     asunto = f"{emoji_texto.get(temperatura, temperatura)} — {nombre_lead or 'Sin nombre'} | MKAddesh"
     _enviar_email(asunto, mensaje)
 
+    # Actualizar campos del dashboard en Supabase
+    if _actualizar_lead and chat_id:
+        try:
+            campos_dashboard = {
+                "temperatura": temperatura.lower(),
+                "estado": "en_seguimiento" if temperatura in ("TIBIO", "FRIO") else "agendado",
+            }
+            if nombre_lead:
+                campos_dashboard["nombre"] = nombre_lead
+            if plan_interes:
+                campos_dashboard["plan_interes"] = plan_interes
+            if datos_cotizacion and isinstance(datos_cotizacion, dict):
+                campos_dashboard["datos_cotizacion"] = datos_cotizacion
+                if datos_cotizacion.get("zip"):
+                    campos_dashboard["zip"] = datos_cotizacion["zip"]
+            _actualizar_lead(chat_id, **campos_dashboard)
+        except Exception as e:
+            print(f"[ANALIZAR] Error actualizando dashboard: {e}")
+
     return json.dumps({
         "exito": True,
         "temperatura": temperatura,
