@@ -1,59 +1,95 @@
 """
 SAM — Sessions (Memoria Persistente)
 
-Patrón aprendido de claw0 s03:
-"JSONL: append on write, replay on read. Too big? Summarize old parts."
+Modo dual:
+- Si SUPABASE_URL y SUPABASE_KEY están configuradas → usa Supabase (sara_v2_sesiones)
+- Si no → usa archivos JSONL locales como fallback
 
-Cada conversación se guarda en un archivo .jsonl
-identificado por un session_id (que puede ser el chat_id de Telegram,
-el número de WhatsApp, etc.)
-
-Estructura del archivo:
-  {"role": "user", "content": "hola", "ts": 1712000000}
-  {"role": "assistant", "content": "¡Hola! ¿En qué puedo ayudarle?", "ts": 1712000001}
-  ...
-
-Compresión (claw0 s06 simplificado):
-Cuando hay más de MAX_TURNS mensajes, los más viejos se resumen
-en un solo bloque y se mantienen los recientes completos.
+Tabla Supabase: sara_v2_sesiones
 """
 
 import json
 import os
 import time
 from pathlib import Path
+from datetime import datetime, timezone
 
-# Directorio donde se guardan las sesiones
+# ============================================================
+# CONFIGURACIÓN
+# ============================================================
+
 SESSIONS_DIR = os.getenv("SESSIONS_DIR", "data/sessions")
-
-# Máximo de turnos antes de comprimir
 MAX_TURNS = 40
-
-# Turnos recientes que se mantienen completos después de comprimir
 KEEP_RECENT = 16
 
+SUPABASE_URL = os.getenv("SUPABASE_URL", "")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
+SUPABASE_TABLE = "sara_v2_sesiones"
+
+_supabase_client = None
+
+
+def _get_supabase():
+    global _supabase_client
+    if _supabase_client:
+        return _supabase_client
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        return None
+    try:
+        from supabase import create_client
+        _supabase_client = create_client(SUPABASE_URL, SUPABASE_KEY)
+        return _supabase_client
+    except ImportError:
+        print("[SESSIONS] supabase-py no instalado, usando JSONL")
+        return None
+    except Exception as e:
+        print(f"[SESSIONS] Error conectando Supabase: {e}, usando JSONL")
+        return None
+
+
+def _usar_supabase() -> bool:
+    return bool(SUPABASE_URL and SUPABASE_KEY)
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+# ============================================================
+# SERIALIZACIÓN
+# ============================================================
+
+def _serializar_content(content):
+    if isinstance(content, list):
+        result = []
+        for bloque in content:
+            if hasattr(bloque, "to_dict"):
+                result.append(bloque.to_dict())
+            elif hasattr(bloque, "model_dump"):
+                result.append(bloque.model_dump())
+            elif isinstance(bloque, dict):
+                result.append(bloque)
+            else:
+                result.append(str(bloque))
+        return result
+    return content
+
+
+# ============================================================
+# JSONL (fallback local)
+# ============================================================
 
 def _session_path(session_id: str) -> Path:
-    """Ruta del archivo de sesión."""
     path = Path(SESSIONS_DIR)
     path.mkdir(parents=True, exist_ok=True)
-    # Sanitizar el session_id para usar como nombre de archivo
     safe_id = "".join(c if c.isalnum() or c in "-_" else "_" for c in session_id)
     return path / f"{safe_id}.jsonl"
 
 
-def cargar_sesion(session_id: str) -> list:
-    """
-    Lee todos los mensajes de una sesión desde disco.
-    Devuelve una lista de mensajes en formato Anthropic API.
-    
-    Si no existe la sesión, devuelve lista vacía (usuario nuevo).
-    """
+def _cargar_jsonl(session_id: str) -> list:
     archivo = _session_path(session_id)
-    
     if not archivo.exists():
         return []
-    
     mensajes = []
     with open(archivo, "r", encoding="utf-8") as f:
         for linea in f:
@@ -62,56 +98,28 @@ def cargar_sesion(session_id: str) -> list:
                 continue
             try:
                 registro = json.loads(linea)
-                # Reconstruir en formato Anthropic API
-                msg = {
-                    "role": registro["role"],
-                    "content": registro["content"]
-                }
-                mensajes.append(msg)
+                mensajes.append({"role": registro["role"], "content": registro["content"]})
             except (json.JSONDecodeError, KeyError):
-                continue  # Saltar líneas corruptas
-    
+                continue
     return mensajes
 
 
-def guardar_mensaje(session_id: str, role: str, content) -> None:
-    """
-    Append-only: agrega UN mensaje al final del archivo.
-    
-    content puede ser:
-    - str (texto normal)
-    - list (bloques de tool_use/tool_result de la API de Anthropic)
-    """
+def _guardar_jsonl(session_id: str, role: str, content) -> None:
     archivo = _session_path(session_id)
-    
-    # Serializar content si es una lista de bloques
-    if isinstance(content, list):
-        content_serializable = []
-        for bloque in content:
-            if hasattr(bloque, "to_dict"):
-                content_serializable.append(bloque.to_dict())
-            elif hasattr(bloque, "model_dump"):
-                content_serializable.append(bloque.model_dump())
-            elif isinstance(bloque, dict):
-                content_serializable.append(bloque)
-            else:
-                content_serializable.append(str(bloque))
-        content_guardado = content_serializable
-    else:
-        content_guardado = content
-    
-    registro = {
-        "role": role,
-        "content": content_guardado,
-        "ts": time.time()
-    }
-    
+    registro = {"role": role, "content": _serializar_content(content), "ts": time.time()}
     with open(archivo, "a", encoding="utf-8") as f:
         f.write(json.dumps(registro, ensure_ascii=False) + "\n")
 
 
-def contar_turnos(session_id: str) -> int:
-    """Cuenta cuántos mensajes tiene la sesión."""
+def _eliminar_jsonl(session_id: str) -> bool:
+    archivo = _session_path(session_id)
+    if archivo.exists():
+        archivo.unlink()
+        return True
+    return False
+
+
+def _contar_jsonl(session_id: str) -> int:
     archivo = _session_path(session_id)
     if not archivo.exists():
         return 0
@@ -119,32 +127,141 @@ def contar_turnos(session_id: str) -> int:
         return sum(1 for linea in f if linea.strip())
 
 
+# ============================================================
+# SUPABASE
+# ============================================================
+
+def _cargar_supabase(session_id: str) -> list:
+    try:
+        sb = _get_supabase()
+        if not sb:
+            return _cargar_jsonl(session_id)
+        result = sb.table(SUPABASE_TABLE).select("mensajes").eq("session_id", session_id).execute()
+        if result.data:
+            return result.data[0].get("mensajes", [])
+        return []
+    except Exception as e:
+        print(f"[SESSIONS] Error cargando Supabase: {e}")
+        return _cargar_jsonl(session_id)
+
+
+def _guardar_supabase(session_id: str, role: str, content) -> None:
+    try:
+        sb = _get_supabase()
+        if not sb:
+            _guardar_jsonl(session_id, role, content)
+            return
+
+        mensajes = _cargar_supabase(session_id)
+        mensajes.append({"role": role, "content": _serializar_content(content), "ts": time.time()})
+
+        sb.table(SUPABASE_TABLE).upsert({
+            "session_id": session_id,
+            "mensajes": mensajes,
+            "ultimo_mensaje_en": _now_iso(),
+            "actualizado_en": _now_iso()
+        }).execute()
+
+    except Exception as e:
+        print(f"[SESSIONS] Error guardando Supabase: {e}")
+        _guardar_jsonl(session_id, role, content)
+
+
+def _eliminar_supabase(session_id: str) -> bool:
+    try:
+        sb = _get_supabase()
+        if not sb:
+            return _eliminar_jsonl(session_id)
+        sb.table(SUPABASE_TABLE).delete().eq("session_id", session_id).execute()
+        return True
+    except Exception as e:
+        print(f"[SESSIONS] Error eliminando Supabase: {e}")
+        return _eliminar_jsonl(session_id)
+
+
+def _contar_supabase(session_id: str) -> int:
+    try:
+        mensajes = _cargar_supabase(session_id)
+        return len(mensajes)
+    except Exception:
+        return _contar_jsonl(session_id)
+
+
+# ============================================================
+# ACTUALIZAR CAMPOS DEL DASHBOARD
+# ============================================================
+
+def actualizar_lead(session_id: str, **campos) -> None:
+    """
+    Actualiza campos del lead en Supabase para el dashboard.
+    Uso: actualizar_lead(session_id, nombre="María", temperatura="CALIENTE", estado="agendado")
+    
+    Campos disponibles:
+    - nombre, ciudad, zip, ingreso_anual, num_personas, plan_interes
+    - temperatura: frio / tibio / caliente
+    - estado: conversando / agendado / en_seguimiento / no_respondio / descartado / llamado / cerrado
+    - cita_agendada (bool), cita_hora (ISO string)
+    - llamada_realizada (bool), venta_cerrada (bool)
+    - fuente: organico / ad_dental / ad_embarazadas / ad_[nombre]
+    - canal: telegram / whatsapp
+    - datos_cotizacion (dict)
+    """
+    if not _usar_supabase():
+        return
+    try:
+        sb = _get_supabase()
+        if not sb:
+            return
+        campos["actualizado_en"] = _now_iso()
+        sb.table(SUPABASE_TABLE).upsert({
+            "session_id": session_id,
+            **campos
+        }).execute()
+    except Exception as e:
+        print(f"[SESSIONS] Error actualizando lead: {e}")
+
+
+# ============================================================
+# API PÚBLICA
+# ============================================================
+
+def cargar_sesion(session_id: str) -> list:
+    if _usar_supabase():
+        return _cargar_supabase(session_id)
+    return _cargar_jsonl(session_id)
+
+
+def guardar_mensaje(session_id: str, role: str, content) -> None:
+    if _usar_supabase():
+        _guardar_supabase(session_id, role, content)
+    else:
+        _guardar_jsonl(session_id, role, content)
+
+
+def eliminar_sesion(session_id: str) -> bool:
+    if _usar_supabase():
+        return _eliminar_supabase(session_id)
+    return _eliminar_jsonl(session_id)
+
+
+def contar_turnos(session_id: str) -> int:
+    if _usar_supabase():
+        return _contar_supabase(session_id)
+    return _contar_jsonl(session_id)
+
+
 def necesita_compresion(session_id: str) -> bool:
-    """¿La sesión tiene demasiados mensajes?"""
     return contar_turnos(session_id) > MAX_TURNS
 
 
 def comprimir_sesion(session_id: str, client, model: str, system_prompt: str) -> None:
-    """
-    Compresión de contexto (patrón claw0 s06 simplificado):
-    
-    1. Carga todos los mensajes
-    2. Toma los mensajes viejos (todo menos los KEEP_RECENT últimos)
-    3. Le pide a Claude que haga un resumen
-    4. Reescribe el archivo: resumen + mensajes recientes
-    
-    Esto permite conversaciones infinitas sin que se llene el contexto.
-    """
     mensajes = cargar_sesion(session_id)
-    
     if len(mensajes) <= KEEP_RECENT:
-        return  # Nada que comprimir
-    
-    # Separar viejos y recientes
+        return
+
     mensajes_viejos = mensajes[:-KEEP_RECENT]
     mensajes_recientes = mensajes[-KEEP_RECENT:]
-    
-    # Construir texto de los mensajes viejos para resumir
+
     texto_para_resumir = ""
     for msg in mensajes_viejos:
         role = msg["role"]
@@ -152,7 +269,6 @@ def comprimir_sesion(session_id: str, client, model: str, system_prompt: str) ->
         if isinstance(content, str):
             texto_para_resumir += f"{role}: {content}\n"
         elif isinstance(content, list):
-            # Extraer texto de bloques
             for bloque in content:
                 if isinstance(bloque, dict):
                     if bloque.get("type") == "text":
@@ -161,8 +277,7 @@ def comprimir_sesion(session_id: str, client, model: str, system_prompt: str) ->
                         texto_para_resumir += f"{role}: [usó herramienta {bloque.get('name', '')}]\n"
                     elif bloque.get("type") == "tool_result":
                         texto_para_resumir += f"{role}: [resultado de herramienta]\n"
-    
-    # Pedir resumen a Claude
+
     try:
         resumen_response = client.messages.create(
             model=model,
@@ -174,77 +289,54 @@ def comprimir_sesion(session_id: str, client, model: str, system_prompt: str) ->
                 "planes cotizados, nivel de interés, y cualquier detalle importante. "
                 "Sé conciso pero no pierdas datos clave."
             ),
-            messages=[{
-                "role": "user",
-                "content": f"Resume esta conversación:\n\n{texto_para_resumir}"
-            }]
+            messages=[{"role": "user", "content": f"Resume esta conversación:\n\n{texto_para_resumir}"}]
         )
-        
         resumen_texto = resumen_response.content[0].text
-        
     except Exception as e:
         print(f"  ⚠️ Error al comprimir sesión: {e}")
-        return  # No comprimir si falla, mejor mantener todo
-    
-    # Reescribir el archivo: resumen como primer mensaje + recientes
-    archivo = _session_path(session_id)
-    
-    with open(archivo, "w", encoding="utf-8") as f:
-        # Escribir resumen como contexto del sistema inyectado
-        resumen_msg = {
+        return
+
+    mensajes_nuevos = [
+        {
             "role": "user",
             "content": f"[CONTEXTO PREVIO DE ESTA CONVERSACIÓN]\n{resumen_texto}\n[FIN DEL CONTEXTO PREVIO]",
             "ts": time.time(),
             "compressed": True
-        }
-        f.write(json.dumps(resumen_msg, ensure_ascii=False) + "\n")
-        
-        # Respuesta del asistente confirmando que tiene el contexto
-        ack_msg = {
+        },
+        {
             "role": "assistant",
             "content": "Entendido, tengo el contexto de nuestra conversación anterior. Continuemos.",
             "ts": time.time(),
             "compressed": True
         }
-        f.write(json.dumps(ack_msg, ensure_ascii=False) + "\n")
-        
-        # Escribir mensajes recientes
-        for msg in mensajes_recientes:
-            registro = {
-                "role": msg["role"],
-                "content": msg["content"],
-                "ts": time.time()
-            }
-            f.write(json.dumps(registro, ensure_ascii=False) + "\n")
-    
-    comprimidos = len(mensajes_viejos)
-    print(f"  📦 Sesión comprimida: {comprimidos} mensajes → resumen + {KEEP_RECENT} recientes")
+    ] + [{"role": m["role"], "content": m["content"], "ts": time.time()} for m in mensajes_recientes]
+
+    if _usar_supabase():
+        try:
+            sb = _get_supabase()
+            if sb:
+                sb.table(SUPABASE_TABLE).upsert({
+                    "session_id": session_id,
+                    "mensajes": mensajes_nuevos,
+                    "actualizado_en": _now_iso()
+                }).execute()
+        except Exception as e:
+            print(f"[SESSIONS] Error comprimiendo en Supabase: {e}")
+    else:
+        archivo = _session_path(session_id)
+        with open(archivo, "w", encoding="utf-8") as f:
+            for msg in mensajes_nuevos:
+                f.write(json.dumps(msg, ensure_ascii=False) + "\n")
+
+    print(f"  📦 Sesión comprimida: {len(mensajes_viejos)} mensajes → resumen + {KEEP_RECENT} recientes")
 
 
 def obtener_info_sesion(session_id: str) -> dict:
-    """Devuelve información sobre una sesión (para debugging)."""
-    archivo = _session_path(session_id)
-    if not archivo.exists():
-        return {"existe": False, "session_id": session_id}
-    
     turnos = contar_turnos(session_id)
-    tamaño = archivo.stat().st_size
-    
+    modo = "supabase" if _usar_supabase() else "jsonl"
     return {
-        "existe": True,
         "session_id": session_id,
         "turnos": turnos,
-        "tamaño_bytes": tamaño,
-        "tamaño_kb": round(tamaño / 1024, 1),
-        "necesita_compresion": turnos > MAX_TURNS,
-        "archivo": str(archivo)
+        "modo": modo,
+        "necesita_compresion": turnos > MAX_TURNS
     }
-
-
-def eliminar_sesion(session_id: str) -> bool:
-    """Elimina una sesión (para cuando el lead se convierte o se descarta)."""
-    archivo = _session_path(session_id)
-    if archivo.exists():
-        archivo.unlink()
-        return True
-    return False
