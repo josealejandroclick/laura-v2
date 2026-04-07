@@ -78,12 +78,6 @@ def dividir_en_mensajes(texto: str) -> list:
         if len(partes) > 1:
             return partes
 
-    # Dividir por salto de línea simple si hay más de una línea
-    if '\n' in texto:
-        partes = [p.strip() for p in texto.split('\n') if p.strip()]
-        if len(partes) > 1:
-            return partes
-
     return [texto]
 
 
@@ -145,13 +139,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for i, msg in enumerate(mensajes):
             if not msg.strip():
                 continue
+            # Delay proporcional al largo del mensaje que se va a enviar
+            # Aplica a TODOS los mensajes incluyendo los siguientes
             chars = len(msg)
             delay_escritura = min(4.0, max(1.5, chars / 50))
             await update.effective_chat.send_action(ChatAction.TYPING)
             await asyncio.sleep(delay_escritura)
             await update.message.reply_text(msg)
-            if i < len(mensajes) - 1:
-                await asyncio.sleep(0.8)
 
         logger.info(f"[{chat_id}] Sara respondió ({len(mensajes)} msgs)")
 
