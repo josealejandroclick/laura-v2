@@ -58,27 +58,79 @@ def limpiar_markdown(texto: str) -> str:
 def dividir_en_mensajes(texto: str) -> list:
     """
     Divide la respuesta en mensajes separados.
-    - Cada párrafo (separado por \n\n) va en su propio mensaje
-    - Los planes van siempre en mensajes separados
-    - Nunca un mensaje supera 500 caracteres si tiene párrafos separables
+    Usa emojis de planes como marcadores únicos para evitar
+    cortes incorrectos cuando el texto menciona nombres de planes.
     """
-    marcadores = ['Plan Básico', 'Medium Cover', 'Full Cover']
-    tiene_planes = sum(1 for m in marcadores if m in texto)
+    MARCADORES_CON_EMOJI = [
+        'Plan Básico 🏥',
+        'Medium Cover 🛡',
+        'Full Cover 💎',
+    ]
 
-    # Planes: dividir en cada marcador
+    tiene_planes = sum(1 for m in MARCADORES_CON_EMOJI if m in texto)
+
     if tiene_planes >= 2:
-        partes = re.split(r'(?=\bPlan Básico\b|\bMedium Cover\b|\bFull Cover\b)', texto)
-        mensajes = [p.strip() for p in partes if p.strip()]
+        # Unir líneas que no empiezan con marcador+emoji
+        lineas = texto.split('\n')
+        buffer = ''
+        bloques = []
+
+        for linea in lineas:
+            strip = linea.strip()
+            if not strip:
+                if buffer:
+                    bloques.append(buffer.strip())
+                    buffer = ''
+                continue
+
+            es_marcador = any(strip.startswith(m) for m in MARCADORES_CON_EMOJI)
+            es_cual = strip.startswith('¿Cuál')
+
+            if (es_marcador or es_cual) and buffer:
+                bloques.append(buffer.strip())
+                buffer = strip
+            elif (es_marcador or es_cual) and not buffer:
+                buffer = strip
+            else:
+                buffer = (buffer + ' ' + strip).strip() if buffer else strip
+
+        if buffer:
+            bloques.append(buffer.strip())
+
+        # Separar pregunta final pegada al último plan
+        resultado = []
+        for bloque in bloques:
+            if '¿Cuál te llama más la atención?' in bloque:
+                idx = bloque.find('¿Cuál te llama más la atención?')
+                antes = bloque[:idx].strip()
+                pregunta = bloque[idx:].strip()
+                if antes:
+                    resultado.append(antes)
+                resultado.append(pregunta)
+            else:
+                resultado.append(bloque)
+
+        mensajes = [m for m in resultado if m]
         if len(mensajes) > 1:
             return mensajes
 
-    # Dividir siempre por párrafos dobles
+    # Sin planes — separar pregunta final si existe
+    if '¿Cuál te llama más la atención?' in texto:
+        idx = texto.find('¿Cuál te llama más la atención?')
+        antes = texto[:idx].strip()
+        pregunta = texto[idx:].strip()
+        if antes:
+            return [antes, pregunta]
+        return [pregunta]
+
+    # Dividir por párrafos dobles
     if '\n\n' in texto:
         partes = [p.strip() for p in texto.split('\n\n') if p.strip()]
         if len(partes) > 1:
             return partes
 
     return [texto]
+
 
 
 
