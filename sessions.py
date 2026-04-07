@@ -138,7 +138,9 @@ def _cargar_supabase(session_id: str) -> list:
             return _cargar_jsonl(session_id)
         result = sb.table(SUPABASE_TABLE).select("mensajes").eq("session_id", session_id).execute()
         if result.data:
-            return result.data[0].get("mensajes", [])
+            mensajes = result.data[0].get("mensajes", [])
+            # Filtrar solo role y content — Anthropic no acepta campos extra como ts
+            return [{"role": m["role"], "content": m["content"]} for m in mensajes if "role" in m and "content" in m]
         return []
     except Exception as e:
         print(f"[SESSIONS] Error cargando Supabase: {e}")
