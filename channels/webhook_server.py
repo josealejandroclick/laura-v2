@@ -142,7 +142,7 @@ class WebhookHandler(BaseHTTPRequestHandler):
             # Procesar con Sam
             agente = crear_agente()
             inicio = time.time()
-            respuesta = agente.procesar(session_id, texto)
+            respuesta = agente.procesar(session_id, texto).replace("\n", " ").strip()
             duracion = round(time.time() - inicio, 2)
             
             logger.info(f"[{session_id}] Sam respondió en {duracion}s ({len(respuesta)} chars)")
