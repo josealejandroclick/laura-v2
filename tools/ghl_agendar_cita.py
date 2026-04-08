@@ -6,6 +6,7 @@ Horario disponible: lunes a viernes, 10am a 7pm ET.
 
 import json
 import os
+import logging
 import httpx
 from datetime import datetime, timedelta, timezone
 
@@ -54,7 +55,6 @@ def _et_to_utc(fecha_hora_iso: str) -> str:
         if TZ_ET:
             dt_et = dt_naive.replace(tzinfo=TZ_ET)
         else:
-            # Fallback: asumir ET = UTC-4 (EDT) o UTC-5 (EST)
             dt_et = dt_naive.replace(tzinfo=timezone(timedelta(hours=-4)))
         dt_utc = dt_et.astimezone(timezone.utc)
         return dt_utc.strftime("%Y-%m-%dT%H:%M:%S+00:00")
@@ -74,10 +74,9 @@ def ejecutar(nombre: str, telefono: str, fecha_hora_iso: str,
     }
 
     try:
-        # Validar horario 10am-7pm ET
         dt = datetime.fromisoformat(fecha_hora_iso)
         hora = dt.hour
-        dia_semana = dt.weekday()  # 0=lunes, 6=domingo
+        dia_semana = dt.weekday()
 
         if dia_semana >= 5:
             return json.dumps({
@@ -96,79 +95,4 @@ def ejecutar(nombre: str, telefono: str, fecha_hora_iso: str,
         if hora >= 19:
             return json.dumps({
                 "exito": False,
-                "error": "Horario no disponible después de las 7pm ET.",
-                "sugerencia": "Ofrece el siguiente día hábil a las 10am."
-            })
-
-        # Convertir a UTC
-        start_utc = _et_to_utc(fecha_hora_iso)
-        dt_end = dt + timedelta(minutes=45)
-        end_utc = _et_to_utc(dt_end.strftime("%Y-%m-%dT%H:%M:%S"))
-
-        # Crear appointment
-        payload = {
-            "calendarId": GHL_CALENDAR_ID,
-            "locationId": GHL_LOCATION_ID,
-            "startTime": start_utc,
-            "endTime": end_utc,
-            "title": f"Llamada con {nombre} — Sara Bot",
-            "appointmentStatus": "confirmed",
-            "phone": telefono,
-        }
-
-        if contacto_id:
-            payload["contactId"] = contacto_id
-
-        if notas:
-            payload["notes"] = notas
-
-        r = httpx.post(
-            f"{GHL_BASE_URL}/calendars/events/appointments",
-            headers=headers,
-            json=payload,
-            timeout=10
-        )
-
-if r.status_code in (200, 201):
-            data = r.json()
-            apt_id = data.get("id") or data.get("event", {}).get("id", "")
-            hora_display = dt.strftime("%d/%m/%Y a las %I:%M %p")
-
-            # Mover oportunidad a stage "Cita agendada" (best effort)
-            if contacto_id:
-                try:
-                    # Buscar oportunidad activa del contacto
-                    r_ops = httpx.get(
-                        f"{GHL_BASE_URL}/contacts/{contacto_id}/opportunities",
-                        headers=headers,
-                        timeout=10
-                    )
-                    if r_ops.status_code == 200:
-                        ops = r_ops.json().get("opportunities", [])
-                        if ops:
-                            opp_id = ops[0].get("id", "")
-                            if opp_id:
-                                httpx.put(
-                                    f"{GHL_BASE_URL}/opportunities/{opp_id}",
-                                    headers=headers,
-                                    json={"pipelineStageId": "62262740-c73b-4be1-a0bb-145af5b62709"},
-                                    timeout=10
-                                )
-                except Exception as e:
-                    import logging
-                    logging.getLogger("ghl_agendar_cita").warning(f"No se pudo mover oportunidad: {e}")
-
-            return json.dumps({
-                "exito": True,
-                "appointment_id": apt_id,
-                "fecha_hora": hora_display,
-                "mensaje": f"Cita agendada para {nombre} el {hora_display}."
-            }, ensure_ascii=False)
-        else:
-            return json.dumps({
-                "exito": False,
-                "error": f"GHL respondió {r.status_code}: {r.text[:300]}"
-            })
-
-    except Exception as e:
-        return json.dumps({"exito": False, "error": str(e)})
+                "error": "Horario n
