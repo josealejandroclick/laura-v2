@@ -129,10 +129,35 @@ def ejecutar(nombre: str, telefono: str, fecha_hora_iso: str,
             timeout=10
         )
 
-        if r.status_code in (200, 201):
+if r.status_code in (200, 201):
             data = r.json()
             apt_id = data.get("id") or data.get("event", {}).get("id", "")
             hora_display = dt.strftime("%d/%m/%Y a las %I:%M %p")
+
+            # Mover oportunidad a stage "Cita agendada" (best effort)
+            if contacto_id:
+                try:
+                    # Buscar oportunidad activa del contacto
+                    r_ops = httpx.get(
+                        f"{GHL_BASE_URL}/contacts/{contacto_id}/opportunities",
+                        headers=headers,
+                        timeout=10
+                    )
+                    if r_ops.status_code == 200:
+                        ops = r_ops.json().get("opportunities", [])
+                        if ops:
+                            opp_id = ops[0].get("id", "")
+                            if opp_id:
+                                httpx.put(
+                                    f"{GHL_BASE_URL}/opportunities/{opp_id}",
+                                    headers=headers,
+                                    json={"pipelineStageId": "62262740-c73b-4be1-a0bb-145af5b62709"},
+                                    timeout=10
+                                )
+                except Exception as e:
+                    import logging
+                    logging.getLogger("ghl_agendar_cita").warning(f"No se pudo mover oportunidad: {e}")
+
             return json.dumps({
                 "exito": True,
                 "appointment_id": apt_id,
