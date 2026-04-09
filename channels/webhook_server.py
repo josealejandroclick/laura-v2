@@ -44,7 +44,7 @@ import httpx
 
 
 def _extraer_telefono(session_id: str) -> str:
-    """Extrae el numero de telefono del session_id. Ej: 'whatsapp_+1234567890' -> '+1234567890'"""
+    """Extrae el numero de telefono del session_id."""
     for prefijo in ("whatsapp_", "sms_", "ghl_", "web_", "webhook_"):
         if session_id.startswith(prefijo):
             return session_id[len(prefijo):]
@@ -53,7 +53,7 @@ def _extraer_telefono(session_id: str) -> str:
 
 def _buscar_contacto_por_telefono(telefono: str) -> dict:
     """
-    Busca un contacto en GHL por numero de telefono.
+    Busca contacto en GHL por telefono.
     Retorna: { "contacto_id": "...", "tags": [...] }
     """
     resultado = {"contacto_id": "", "tags": []}
@@ -80,22 +80,46 @@ def _buscar_contacto_por_telefono(telefono: str) -> dict:
             if contacto:
                 resultado["contacto_id"] = contacto.get("id", "")
                 resultado["tags"] = contacto.get("tags", [])
-                logger.info(f"[GHL] Contacto encontrado por telefono {telefono}: {resultado['contacto_id']} | tags: {resultado['tags']}")
+                logger.info(f"[GHL] Contacto encontrado: {resultado['contacto_id']} | tags: {resultado['tags']}")
             else:
-                logger.info(f"[GHL] No se encontro contacto para telefono {telefono}")
+                logger.info(f"[GHL] No se encontro contacto para {telefono}")
         else:
-            logger.warning(f"[GHL] Error buscando contacto {telefono}: {r.status_code} {r.text[:200]}")
+            logger.warning(f"[GHL] Error buscando contacto {telefono}: {r.status_code}")
     except Exception as e:
-        logger.warning(f"[GHL] Excepcion buscando contacto {telefono}: {e}")
+        logger.warning(f"[GHL] Excepcion buscando contacto: {e}")
 
     return resultado
 
 
+def _obtener_tags_por_id(contacto_id: str) -> set:
+    """Obtiene los tags de un contacto por su ID."""
+    if not GHL_API_KEY or not contacto_id:
+        return set()
+
+    headers = {
+        "Authorization": f"Bearer {GHL_API_KEY}",
+        "Version": "2021-04-15",
+        "Content-Type": "application/json"
+    }
+
+    try:
+        r = httpx.get(
+            f"{GHL_BASE_URL}/contacts/{contacto_id}",
+            headers=headers,
+            timeout=8
+        )
+        if r.status_code == 200:
+            data = r.json()
+            contacto = data.get("contact", data)
+            return set(contacto.get("tags", []))
+    except Exception as e:
+        logger.warning(f"[GHL] Error obteniendo tags por ID: {e}")
+
+    return set()
+
+
 def _obtener_historial_ghl(contacto_id: str) -> str:
-    """
-    Obtiene los ultimos 10 mensajes del contacto en GHL.
-    Retorna string con el historial o vacio si falla.
-    """
+    """Obtiene los ultimos 10 mensajes del contacto en GHL."""
     if not GHL_API_KEY or not contacto_id:
         return ""
 
@@ -134,7 +158,7 @@ def _obtener_historial_ghl(contacto_id: str) -> str:
                                     lineas.append(f"{direccion}: {cuerpo}")
                             return "\n".join(lineas[-10:])
     except Exception as e:
-        logger.warning(f"[GHL] Error obteniendo historial {contacto_id}: {e}")
+        logger.warning(f"[GHL] Error obteniendo historial: {e}")
 
     return ""
 
@@ -173,7 +197,7 @@ class WebhookHandler(BaseHTTPRequestHandler):
             nombre = data.get("nombre", "") or data.get("name", "")
             canal = data.get("canal", "webhook")
             reply_webhook = data.get("reply_webhook", "")
-            contacto_id = data.get("contacto_id", "")
+            contacto_id_payload = data.get("contacto_id", "")
 
             if not session_id or not texto:
                 self._respond(400, {"error": "Faltan campos requeridos: session_id y texto"})
@@ -184,34 +208,16 @@ class WebhookHandler(BaseHTTPRequestHandler):
 
             logger.info(f"[{canal}] [{session_id}] {nombre or 'Anonimo'}: {texto[:60]}...")
 
-            # ── Verificacion de cliente cerrado ──────────────────────────────
-            # Si contacto_id no llego en el payload, buscar por telefono
-            if not contacto_id:
-                telefono = _extraer_telefono(session_id)
-                datos_contacto = _buscar_contacto_por_telefono(telefono)
-                contacto_id = datos_contacto.get("contacto_id", "")
-                tags = set(datos_contacto.get("tags", []))
-            else:
-                # contacto_id llego, obtener tags directamente
-                try:
-                    headers_ghl = {
-                        "Authorization": f"Bearer {GHL_API_KEY}",
-                        "Version": "2021-04-15",
-                    }
-                    r = httpx.get(
-                        f"{GHL_BASE_URL}/contacts/{contacto_id}",
-                        headers=headers_ghl,
-                        timeout=8
-                    )
-                    if r.status_code == 200:
-                        contacto_data = r.json()
-                        contacto_obj = contacto_data.get("contact", contacto_data)
-                        tags = set(contacto_obj.get("tags", []))
-                    else:
-                        tags = set()
-                except Exception as e:
-                    logger.warning(f"[GHL] Error obteniendo tags: {e}")
-                    tags = set()
+            # ── Obtener contacto_id y tags SIEMPRE por telefono ──────────────
+            # Buscamos siempre por telefono para garantizar tags actualizados
+            telefono = _extraer_telefono(session_id)
+            datos_contacto = _buscar_contacto_por_telefono(telefono)
+            contacto_id = datos_contacto.get("contacto_id", "") or contacto_id_payload
+            tags = set(datos_contacto.get("tags", []))
+
+            # Si la busqueda por telefono no trajo tags pero tenemos contacto_id, intentar por ID
+            if contacto_id and not tags:
+                tags = _obtener_tags_por_id(contacto_id)
 
             logger.info(f"[{session_id}] contacto_id={contacto_id} | tags={tags}")
 
