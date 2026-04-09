@@ -1,5 +1,5 @@
 """
-SAM CORE — Cerebro del agente
+SAM CORE -- Cerebro del agente
 6 tools registrados:
 - verificar_zip
 - cotizar_planes
@@ -28,17 +28,17 @@ def _contexto_tiempo() -> str:
     """Devuelve fecha, hora y si es horario de oficina en zona ET."""
     try:
         ahora = datetime.now(_TZ_ET) if _TZ_ET else datetime.now()
-        dia_semana = ["lunes","martes","miércoles","jueves","viernes","sábado","domingo"][ahora.weekday()]
+        dia_semana = ["lunes","martes","miercoles","jueves","viernes","sabado","domingo"][ahora.weekday()]
         hora_str = ahora.strftime("%I:%M %p")
         fecha_str = ahora.strftime("%d/%m/%Y")
         es_oficina = ahora.weekday() < 5 and 8 <= ahora.hour < 18
-        horario = "HORARIO DE OFICINA — un asesor puede llamar dentro de la próxima media hora" if es_oficina else "FUERA DE HORARIO — el asesor contacta al siguiente día hábil"
+        horario = "HORARIO DE OFICINA -- un asesor puede llamar dentro de la proxima media hora" if es_oficina else "FUERA DE HORARIO -- el asesor contacta al siguiente dia habil"
         return (
             f"[CONTEXTO DEL SISTEMA]\n"
             f"Fecha actual: {dia_semana} {fecha_str}\n"
             f"Hora actual (ET): {hora_str}\n"
             f"Estado: {horario}\n"
-            f"Si el cliente pide que lo llamen 'mañana', la fecha correcta es {(ahora).strftime('%d/%m/%Y')} sumando 1 día.\n"
+            f"Si el cliente pide que lo llamen 'manana', la fecha correcta es {(ahora).strftime('%d/%m/%Y')} sumando 1 dia.\n"
             f"[FIN CONTEXTO]"
         )
     except Exception:
@@ -89,8 +89,11 @@ TOOL_HANDLERS = {
     "ghl_enviar_mensaje":         ghl_enviar_mensaje.ejecutar,
 }
 
-# Tools que necesitan session_id como parámetro extra
+# Tools que reciben session_id como parametro extra
 TOOLS_CON_SESSION = {"agendar_tarea", "analizar_lead"}
+
+# Tools que reciben contacto_id del extra_context
+TOOLS_CON_CONTACTO = {"analizar_lead", "ghl_agendar_cita"}
 
 
 # ============================================================
@@ -119,10 +122,17 @@ class SamAgente:
                 with open(fallback, "r", encoding="utf-8") as f:
                     return f.read()
             except FileNotFoundError:
-                return "Eres Sara, asesora de protección financiera de MKAddesh."
+                return "Eres Sara, asesora de proteccion financiera de MKAddesh."
 
-    def procesar(self, session_id: str, user_input: str) -> str:
-        """Procesa un mensaje y devuelve la respuesta."""
+    def procesar(self, session_id: str, user_input: str, extra_context: dict = None) -> str:
+        """
+        Procesa un mensaje y devuelve la respuesta.
+        extra_context: dict opcional con datos adicionales a inyectar en tools
+                       (ej: {"contacto_id": "abc123"})
+        """
+        if extra_context is None:
+            extra_context = {}
+
         registrar_actividad(session_id)
 
         mensajes = cargar_sesion(session_id)
@@ -166,15 +176,22 @@ class SamAgente:
                     handler = TOOL_HANDLERS.get(bloque.name)
                     try:
                         if handler:
+                            kwargs = dict(bloque.input)
+
+                            # Inyectar session_id si el tool lo necesita
                             if bloque.name in TOOLS_CON_SESSION:
-                                output = handler(**bloque.input, session_id=session_id)
-                            else:
-                                output = handler(**bloque.input)
+                                kwargs["session_id"] = session_id
+
+                            # Inyectar contacto_id del extra_context si el tool lo necesita
+                            if bloque.name in TOOLS_CON_CONTACTO:
+                                contacto_id = extra_context.get("contacto_id", "")
+                                if contacto_id and "contacto_id" not in kwargs:
+                                    kwargs["contacto_id"] = contacto_id
+
+                            output = handler(**kwargs)
                         else:
                             output = json.dumps({"error": f"Tool '{bloque.name}' no encontrada"})
                     except Exception as e:
-                        # Si el tool falla, devolver error como tool_result
-                        # para no dejar el historial en estado inválido
                         output = json.dumps({"error": f"Error ejecutando tool: {str(e)}"})
 
                     resultados.append({
