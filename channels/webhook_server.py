@@ -191,9 +191,12 @@ class WebhookHandler(BaseHTTPRequestHandler):
 
             registrar_actividad(session_id)
 
+            # Pasar contacto_id al agente via extra_context
+            extra_context = {"contacto_id": contacto_id} if contacto_id else {}
+
             agente = crear_agente()
             inicio = time.time()
-            respuesta = agente.procesar(session_id, texto).replace("\n", " ").strip()
+            respuesta = agente.procesar(session_id, texto, extra_context=extra_context).replace("\n", " ").strip()
             duracion = round(time.time() - inicio, 2)
 
             logger.info(f"[{session_id}] Sam respondio en {duracion}s ({len(respuesta)} chars)")
