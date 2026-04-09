@@ -32,7 +32,7 @@ GHL_BASE_URL = "https://services.leadconnectorhq.com"
 TAGS_CLIENTE_CERRADO = {"p_cliente_cerrado", "cliente_dental"}
 
 MENSAJE_ASISTENCIA = (
-    "Hola! Veo que ya eres cliente de MKAddesh. "
+    "Hola! Veo que ya eres cliente de Mkaddesh. "
     "Para cualquier tema relacionado con tu cobertura actual, citas medicas o asistencia, "
     "comunicate con nuestro equipo de Atencion al Cliente directamente: "
     "https://wa.me/17866004310 "
