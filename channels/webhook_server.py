@@ -26,6 +26,7 @@ logger = logging.getLogger("sam_webhook")
 
 PORT = int(os.getenv("WEBHOOK_PORT", "8085"))
 GHL_API_KEY = os.getenv("GHL_API_KEY", "")
+GHL_LOCATION_ID = os.getenv("GHL_LOCATION_ID", "")
 GHL_BASE_URL = "https://services.leadconnectorhq.com"
 
 TAGS_CLIENTE_CERRADO = {"p_cliente_cerrado", "cliente_dental"}
@@ -42,14 +43,22 @@ MENSAJE_ASISTENCIA = (
 import httpx
 
 
-def _obtener_datos_contacto_ghl(contacto_id: str) -> dict:
-    """
-    Obtiene tags e historial reciente del contacto en GHL.
-    Retorna: { "tags": [...], "historial": "texto con ultimos mensajes" }
-    """
-    resultado = {"tags": [], "historial": ""}
+def _extraer_telefono(session_id: str) -> str:
+    """Extrae el numero de telefono del session_id. Ej: 'whatsapp_+1234567890' -> '+1234567890'"""
+    for prefijo in ("whatsapp_", "sms_", "ghl_", "web_", "webhook_"):
+        if session_id.startswith(prefijo):
+            return session_id[len(prefijo):]
+    return session_id
 
-    if not GHL_API_KEY or not contacto_id:
+
+def _buscar_contacto_por_telefono(telefono: str) -> dict:
+    """
+    Busca un contacto en GHL por numero de telefono.
+    Retorna: { "contacto_id": "...", "tags": [...] }
+    """
+    resultado = {"contacto_id": "", "tags": []}
+
+    if not GHL_API_KEY or not GHL_LOCATION_ID or not telefono:
         return resultado
 
     headers = {
@@ -58,24 +67,48 @@ def _obtener_datos_contacto_ghl(contacto_id: str) -> dict:
         "Content-Type": "application/json"
     }
 
-    # Obtener tags del contacto
     try:
         r = httpx.get(
-            f"{GHL_BASE_URL}/contacts/{contacto_id}",
+            f"{GHL_BASE_URL}/contacts/search/duplicate",
+            params={"locationId": GHL_LOCATION_ID, "phone": telefono},
             headers=headers,
             timeout=8
         )
         if r.status_code == 200:
             data = r.json()
-            contacto = data.get("contact", data)
-            resultado["tags"] = contacto.get("tags", [])
+            contacto = data.get("contact", None)
+            if contacto:
+                resultado["contacto_id"] = contacto.get("id", "")
+                resultado["tags"] = contacto.get("tags", [])
+                logger.info(f"[GHL] Contacto encontrado por telefono {telefono}: {resultado['contacto_id']} | tags: {resultado['tags']}")
+            else:
+                logger.info(f"[GHL] No se encontro contacto para telefono {telefono}")
+        else:
+            logger.warning(f"[GHL] Error buscando contacto {telefono}: {r.status_code} {r.text[:200]}")
     except Exception as e:
-        logger.warning(f"[GHL] Error obteniendo contacto {contacto_id}: {e}")
+        logger.warning(f"[GHL] Excepcion buscando contacto {telefono}: {e}")
 
-    # Obtener historial de conversacion (ultimos 10 mensajes)
+    return resultado
+
+
+def _obtener_historial_ghl(contacto_id: str) -> str:
+    """
+    Obtiene los ultimos 10 mensajes del contacto en GHL.
+    Retorna string con el historial o vacio si falla.
+    """
+    if not GHL_API_KEY or not contacto_id:
+        return ""
+
+    headers = {
+        "Authorization": f"Bearer {GHL_API_KEY}",
+        "Version": "2021-04-15",
+        "Content-Type": "application/json"
+    }
+
     try:
         r2 = httpx.get(
-            f"{GHL_BASE_URL}/conversations/search?contactId={contacto_id}&limit=1",
+            f"{GHL_BASE_URL}/conversations/search",
+            params={"contactId": contacto_id, "limit": 1},
             headers=headers,
             timeout=8
         )
@@ -85,7 +118,8 @@ def _obtener_datos_contacto_ghl(contacto_id: str) -> dict:
                 conv_id = convs[0].get("id", "")
                 if conv_id:
                     r3 = httpx.get(
-                        f"{GHL_BASE_URL}/conversations/{conv_id}/messages?limit=10",
+                        f"{GHL_BASE_URL}/conversations/{conv_id}/messages",
+                        params={"limit": 10},
                         headers=headers,
                         timeout=8
                     )
@@ -98,11 +132,11 @@ def _obtener_datos_contacto_ghl(contacto_id: str) -> dict:
                                 cuerpo = m.get("body", "").strip()
                                 if cuerpo:
                                     lineas.append(f"{direccion}: {cuerpo}")
-                            resultado["historial"] = "\n".join(lineas[-10:])
+                            return "\n".join(lineas[-10:])
     except Exception as e:
         logger.warning(f"[GHL] Error obteniendo historial {contacto_id}: {e}")
 
-    return resultado
+    return ""
 
 
 class WebhookHandler(BaseHTTPRequestHandler):
@@ -142,9 +176,7 @@ class WebhookHandler(BaseHTTPRequestHandler):
             contacto_id = data.get("contacto_id", "")
 
             if not session_id or not texto:
-                self._respond(400, {
-                    "error": "Faltan campos requeridos: session_id y texto"
-                })
+                self._respond(400, {"error": "Faltan campos requeridos: session_id y texto"})
                 return
 
             if not session_id.startswith(("whatsapp_", "sms_", "ghl_", "web_")):
@@ -152,36 +184,64 @@ class WebhookHandler(BaseHTTPRequestHandler):
 
             logger.info(f"[{canal}] [{session_id}] {nombre or 'Anonimo'}: {texto[:60]}...")
 
-            # Verificar contacto en GHL si tenemos contacto_id
-            if contacto_id:
-                datos_ghl = _obtener_datos_contacto_ghl(contacto_id)
-                tags = set(datos_ghl.get("tags", []))
-                historial = datos_ghl.get("historial", "")
-
-                # Cliente cerrado -> redirigir a asistencia
-                if tags & TAGS_CLIENTE_CERRADO:
-                    logger.info(f"[{session_id}] Cliente cerrado (tags: {tags}) -> redirigiendo a asistencia")
-                    response_data = {
-                        "session_id": session_id,
-                        "respuesta": MENSAJE_ASISTENCIA,
-                        "duracion_segundos": 0,
-                        "metadata": {
-                            "agent": AGENT_NAME,
-                            "canal": canal,
-                            "modelo": MODEL_ID,
-                            "cliente_cerrado": True
-                        }
+            # ── Verificacion de cliente cerrado ──────────────────────────────
+            # Si contacto_id no llego en el payload, buscar por telefono
+            if not contacto_id:
+                telefono = _extraer_telefono(session_id)
+                datos_contacto = _buscar_contacto_por_telefono(telefono)
+                contacto_id = datos_contacto.get("contacto_id", "")
+                tags = set(datos_contacto.get("tags", []))
+            else:
+                # contacto_id llego, obtener tags directamente
+                try:
+                    headers_ghl = {
+                        "Authorization": f"Bearer {GHL_API_KEY}",
+                        "Version": "2021-04-15",
                     }
-                    self._respond(200, response_data)
-                    if reply_webhook:
-                        threading.Thread(
-                            target=self._enviar_reply_webhook,
-                            args=(reply_webhook, response_data),
-                            daemon=True
-                        ).start()
-                    return
+                    r = httpx.get(
+                        f"{GHL_BASE_URL}/contacts/{contacto_id}",
+                        headers=headers_ghl,
+                        timeout=8
+                    )
+                    if r.status_code == 200:
+                        contacto_data = r.json()
+                        contacto_obj = contacto_data.get("contact", contacto_data)
+                        tags = set(contacto_obj.get("tags", []))
+                    else:
+                        tags = set()
+                except Exception as e:
+                    logger.warning(f"[GHL] Error obteniendo tags: {e}")
+                    tags = set()
 
-                # Inyectar historial como contexto si existe
+            logger.info(f"[{session_id}] contacto_id={contacto_id} | tags={tags}")
+
+            # Cliente cerrado -> responder con asistencia y terminar
+            if tags & TAGS_CLIENTE_CERRADO:
+                logger.info(f"[{session_id}] Cliente cerrado -> redirigiendo a asistencia")
+                response_data = {
+                    "session_id": session_id,
+                    "respuesta": MENSAJE_ASISTENCIA,
+                    "duracion_segundos": 0,
+                    "metadata": {
+                        "agent": AGENT_NAME,
+                        "canal": canal,
+                        "modelo": MODEL_ID,
+                        "cliente_cerrado": True
+                    }
+                }
+                self._respond(200, response_data)
+                if reply_webhook:
+                    threading.Thread(
+                        target=self._enviar_reply_webhook,
+                        args=(reply_webhook, response_data),
+                        daemon=True
+                    ).start()
+                return
+            # ─────────────────────────────────────────────────────────────────
+
+            # Inyectar historial como contexto si el contacto existe en GHL
+            if contacto_id:
+                historial = _obtener_historial_ghl(contacto_id)
                 if historial:
                     texto = (
                         f"[Contexto de conversacion previa con este cliente:\n{historial}\n"
@@ -191,7 +251,6 @@ class WebhookHandler(BaseHTTPRequestHandler):
 
             registrar_actividad(session_id)
 
-            # Pasar contacto_id al agente via extra_context
             extra_context = {"contacto_id": contacto_id} if contacto_id else {}
 
             agente = crear_agente()
