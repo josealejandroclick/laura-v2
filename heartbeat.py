@@ -1,11 +1,11 @@
 """
-SAM — Heartbeat + Cron (Agente Proactivo)
+SAM -- Heartbeat + Cron (Agente Proactivo)
 
 Follow-up con intervalos variables:
-  #1 → 30 minutos
-  #2 → 2 horas
-  #3 → 24 horas
-  #4 → 48 horas
+  #1 -> 30 minutos
+  #2 -> 2 horas
+  #3 -> 24 horas
+  #4 -> 48 horas
 """
 
 import json
@@ -20,13 +20,11 @@ from typing import Callable, Optional
 logger = logging.getLogger("sam_heartbeat")
 
 # ============================================================
-# CONFIGURACIÓN
+# CONFIGURACION
 # ============================================================
 
 HEARTBEAT_INTERVAL = int(os.getenv("HEARTBEAT_INTERVAL", "300"))  # 5 min
 
-# Intervalos de follow-up en minutos (configurable via env como lista separada por comas)
-# Default: 30min, 2h, 24h, 48h
 _FOLLOWUP_INTERVALS_RAW = os.getenv("FOLLOWUP_INTERVALS", "30,120,1440,2880")
 FOLLOWUP_INTERVALS = [int(x) for x in _FOLLOWUP_INTERVALS_RAW.split(",")]
 MAX_FOLLOWUPS = len(FOLLOWUP_INTERVALS)
@@ -56,7 +54,7 @@ def _guardar_tracker(tracker: dict):
 
 def registrar_actividad(session_id: str):
     """
-    Marca que hubo actividad en una sesión.
+    Marca que hubo actividad en una sesion.
     Resetea el contador de follow-ups cuando el cliente responde.
     """
     tracker = _cargar_tracker()
@@ -71,15 +69,14 @@ def registrar_actividad(session_id: str):
 def obtener_leads_para_followup() -> list:
     """
     Devuelve lista de (session_id, followup_num) donde followup_num
-    indica cuál follow-up toca enviar según los intervalos configurados.
-    Solo incluye session_ids numéricos válidos de Telegram.
+    indica cual follow-up toca enviar segun los intervalos configurados.
+    Solo incluye session_ids numericos validos de Telegram.
     """
     tracker = _cargar_tracker()
     ahora = time.time()
     leads = []
 
     for session_id, data in tracker.items():
-        # Ignorar sesiones no numéricas (consola_test, etc.)
         if not str(session_id).lstrip("-").isdigit():
             continue
         if not data.get("activo", True):
@@ -92,7 +89,6 @@ def obtener_leads_para_followup() -> list:
         ultimo = data.get("ultimo_mensaje", ahora)
         minutos_transcurridos = (ahora - ultimo) / 60
 
-        # Verificar si toca el próximo follow-up
         if enviados < len(FOLLOWUP_INTERVALS):
             minutos_requeridos = FOLLOWUP_INTERVALS[enviados]
             if minutos_transcurridos >= minutos_requeridos:
@@ -176,7 +172,7 @@ TOOL_SCHEMA = {
     "name": "agendar_tarea",
     "description": (
         "Programa una tarea futura: recordatorio de llamada, follow-up, "
-        "o cualquier acción que deba ejecutarse en una fecha/hora específica."
+        "o cualquier accion que deba ejecutarse en una fecha/hora especifica."
     ),
     "input_schema": {
         "type": "object",
@@ -192,7 +188,7 @@ TOOL_SCHEMA = {
             },
             "descripcion": {
                 "type": "string",
-                "description": "Qué hacer cuando llegue la hora"
+                "description": "Que hacer cuando llegue la hora"
             }
         },
         "required": ["ejecutar_en", "tipo", "descripcion"]
@@ -234,7 +230,7 @@ class Heartbeat:
         self._running = False
         if self._timer:
             self._timer.cancel()
-        logger.info(f"Heartbeat detenido después de {self.ciclos} ciclos.")
+        logger.info(f"Heartbeat detenido despues de {self.ciclos} ciclos.")
 
     def _programar_siguiente(self):
         if self._running:
@@ -248,7 +244,7 @@ class Heartbeat:
             # Follow-ups
             leads = obtener_leads_para_followup()
             for session_id, followup_num in leads:
-                logger.info(f"💓 Follow-up #{followup_num} para {session_id}")
+                logger.info(f"Follow-up #{followup_num} para {session_id}")
                 if self.on_followup:
                     try:
                         self.on_followup(session_id, followup_num)
@@ -259,7 +255,7 @@ class Heartbeat:
             # Tareas cron
             tareas = obtener_tareas_pendientes()
             for tarea in tareas:
-                logger.info(f"⏰ Ejecutando cron: {tarea.get('descripcion')}")
+                logger.info(f"Ejecutando cron: {tarea.get('descripcion')}")
                 if self.on_cron:
                     try:
                         self.on_cron(tarea)
@@ -267,8 +263,15 @@ class Heartbeat:
                     except Exception as e:
                         logger.error(f"Error en cron {tarea['id']}: {e}")
 
+            # Reportes automaticos
+            try:
+                from reports.daily_report import verificar_y_ejecutar
+                verificar_y_ejecutar()
+            except Exception as e:
+                logger.error(f"Error en reportes: {e}")
+
             if leads or tareas:
-                logger.info(f"💓 Ciclo {self.ciclos}: {len(leads)} follow-ups, {len(tareas)} cron")
+                logger.info(f"Ciclo {self.ciclos}: {len(leads)} follow-ups, {len(tareas)} cron")
 
         except Exception as e:
             logger.error(f"Error en heartbeat ciclo {self.ciclos}: {e}")
@@ -283,26 +286,26 @@ class Heartbeat:
 FOLLOWUP_TEMPLATES = [
     # Follow-up #1 (30 min)
     (
-        "Hola 👋 solo quería asegurarme de que recibiste la información. "
-        "¿Te quedó alguna duda sobre las opciones que vimos? Aquí estoy."
+        "Hola solo queria asegurarme de que recibiste la informacion. "
+        "Te quedo alguna duda sobre las opciones que vimos? Aqui estoy."
     ),
     # Follow-up #2 (2 horas)
     (
-        "Hola de nuevo. Sé que estás evaluando tus opciones y quería recordarte "
+        "Hola de nuevo. Se que estas evaluando tus opciones y queria recordarte "
         "que puedo conectarte con un asesor hoy mismo, sin compromiso. "
-        "¿Quieres que te llamen?"
+        "Quieres que te llamen?"
     ),
     # Follow-up #3 (24 horas)
     (
-        "Hola, {agent_name} por aquí. Solo quería saber si tienes alguna pregunta "
+        "Hola, {agent_name} por aqui. Solo queria saber si tienes alguna pregunta "
         "sobre los planes que revisamos. Si quieres hablar con un asesor, "
         "dime y lo agendo para ti."
     ),
     # Follow-up #4 (48 horas)
     (
-        "Hola, este es mi último mensaje por ahora. Si en algún momento "
-        "necesitas ayuda con tu cobertura de salud, aquí estaré. "
-        "¡Que tengas un excelente día! 🙏"
+        "Hola, este es mi ultimo mensaje por ahora. Si en algun momento "
+        "necesitas ayuda con tu cobertura de salud, aqui estare. "
+        "Que tengas un excelente dia!"
     ),
 ]
 
