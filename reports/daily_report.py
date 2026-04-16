@@ -42,6 +42,9 @@ STAGES_DESCARTADOS = {
 
 TAGS_CERRADOS = {"p_cliente_cerrado", "cliente_dental"}
 
+# Control para evitar doble envio
+_ultimo_reporte = {"diario": None, "semanal": None, "mensual": None}
+
 
 # ── Helpers ──────────────────────────────────────────────────
 
@@ -72,6 +75,7 @@ def _enviar_telegram(mensaje: str):
 
 
 def _obtener_sesiones_supabase(desde: datetime, hasta: datetime) -> list:
+    """Obtiene sesiones de WhatsApp usando columna actualizado_en."""
     if not SUPABASE_URL or not SUPABASE_KEY:
         return []
     try:
@@ -80,20 +84,27 @@ def _obtener_sesiones_supabase(desde: datetime, hasta: datetime) -> list:
             "Authorization": f"Bearer {SUPABASE_KEY}",
             "Content-Type": "application/json"
         }
-        desde_iso = desde.isoformat()
+        # Formatear sin microsegundos para compatibilidad
+        desde_iso = desde.strftime("%Y-%m-%dT%H:%M:%S")
+        hasta_iso = hasta.strftime("%Y-%m-%dT%H:%M:%S")
+
         r = httpx.get(
             f"{SUPABASE_URL}/rest/v1/sara_v2_sesiones",
             headers=headers,
             params={
-                "select": "session_id,mensajes,created_at,updated_at",
-                "session_id": "like.whatsapp_%",
-                "updated_at": f"gte.{desde_iso}",
-                "order": "updated_at.desc"
+                "select": "session_id,mensajes,temperatura,creado_en,actualizado_en",
+                "session_id": "like.whatsapp_*",
+                "actualizado_en": f"gte.{desde_iso}",
+                "order": "actualizado_en.desc"
             },
             timeout=15
         )
         if r.status_code == 200:
-            return r.json()
+            data = r.json()
+            logger.info(f"[REPORT] Supabase devolvio {len(data)} sesiones desde {desde_iso}")
+            return data
+        else:
+            logger.error(f"[REPORT] Error Supabase {r.status_code}: {r.text[:200]}")
     except Exception as e:
         logger.error(f"[REPORT] Error Supabase: {e}")
     return []
@@ -118,7 +129,9 @@ def _obtener_contactos_ghl(desde: datetime) -> list:
             timeout=15
         )
         if r.status_code == 200:
-            return r.json().get("contacts", [])
+            contactos = r.json().get("contacts", [])
+            logger.info(f"[REPORT] GHL devolvio {len(contactos)} contactos")
+            return contactos
     except Exception as e:
         logger.error(f"[REPORT] Error GHL contactos: {e}")
     return []
@@ -209,33 +222,16 @@ def _analisis_semantico_claude(sesiones: list, periodo: str) -> str:
 def _calcular_metricas(sesiones: list, contactos: list) -> dict:
     total_sesiones = len(sesiones)
 
+    # Temperatura desde campo directo en Supabase
     calientes = tibios = frios = 0
     for s in sesiones:
-        mensajes = s.get("mensajes", [])
-        if isinstance(mensajes, str):
-            try:
-                mensajes = json.loads(mensajes)
-            except Exception:
-                mensajes = []
-        for m in mensajes:
-            if isinstance(m, dict) and m.get("role") == "user":
-                contenido = m.get("content", "")
-                if isinstance(contenido, list):
-                    for bloque in contenido:
-                        if isinstance(bloque, dict) and bloque.get("type") == "tool_result":
-                            resultado = bloque.get("content", "")
-                            if isinstance(resultado, str) and "temperatura" in resultado.lower():
-                                try:
-                                    datos = json.loads(resultado)
-                                    temp = datos.get("temperatura", "").upper()
-                                    if temp == "CALIENTE":
-                                        calientes += 1
-                                    elif temp == "TIBIO":
-                                        tibios += 1
-                                    elif temp == "FRIO":
-                                        frios += 1
-                                except Exception:
-                                    pass
+        temp = (s.get("temperatura") or "").upper()
+        if temp == "CALIENTE":
+            calientes += 1
+        elif temp == "TIBIO":
+            tibios += 1
+        elif temp == "FRIO":
+            frios += 1
 
     agendados = cerrados = descartados = en_seguimiento = 0
     for c in contactos:
@@ -265,6 +261,12 @@ def _calcular_metricas(sesiones: list, contactos: list) -> dict:
 
 def ejecutar_diario():
     ahora = _ahora_et()
+    clave = ahora.strftime("%Y-%m-%d")
+    if _ultimo_reporte["diario"] == clave:
+        logger.info("[REPORT] Reporte diario ya enviado hoy, omitiendo")
+        return
+    _ultimo_reporte["diario"] = clave
+
     ayer_inicio = (ahora - timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
     ayer_fin = ayer_inicio.replace(hour=23, minute=59, second=59)
     fecha_str = ayer_inicio.strftime("%d/%m/%Y")
@@ -293,8 +295,14 @@ def ejecutar_diario():
 
 def ejecutar_semanal():
     ahora = _ahora_et()
-    inicio_semana = (ahora - timedelta(days=7)).replace(hour=0, minute=0, second=0, microsecond=0)
     semana_num = ahora.isocalendar()[1]
+    clave = f"{ahora.year}-W{semana_num}"
+    if _ultimo_reporte["semanal"] == clave:
+        logger.info("[REPORT] Reporte semanal ya enviado esta semana, omitiendo")
+        return
+    _ultimo_reporte["semanal"] = clave
+
+    inicio_semana = (ahora - timedelta(days=7)).replace(hour=0, minute=0, second=0, microsecond=0)
     periodo_str = f"{inicio_semana.strftime('%d/%m')} al {ahora.strftime('%d/%m/%Y')}"
 
     logger.info(f"[REPORT] Generando reporte semanal semana {semana_num}")
@@ -324,6 +332,12 @@ def ejecutar_semanal():
 def ejecutar_mensual():
     ahora = _ahora_et()
     mes_anterior = (ahora.replace(day=1) - timedelta(days=1))
+    clave = mes_anterior.strftime("%Y-%m")
+    if _ultimo_reporte["mensual"] == clave:
+        logger.info("[REPORT] Reporte mensual ya enviado este mes, omitiendo")
+        return
+    _ultimo_reporte["mensual"] = clave
+
     inicio_mes = mes_anterior.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     mes_str = mes_anterior.strftime("%B %Y")
 
@@ -359,14 +373,15 @@ def verificar_y_ejecutar():
     dia_semana = ahora.weekday()  # 0=lunes, 6=domingo
     dia_mes = ahora.day
 
+    # Ventana de 5 minutos para evitar doble envio
     # Diario: 8am ET, lunes a sabado (0-5)
-    if hora == 8 and minuto < 10 and dia_semana < 6:
+    if hora == 8 and minuto < 5 and dia_semana < 6:
         ejecutar_diario()
 
     # Semanal: domingo (6) a las 7pm ET
-    if hora == 19 and minuto < 10 and dia_semana == 6:
+    if hora == 19 and minuto < 5 and dia_semana == 6:
         ejecutar_semanal()
 
     # Mensual: dia 1 a las 8am ET
-    if dia_mes == 1 and hora == 8 and minuto < 10:
+    if dia_mes == 1 and hora == 8 and minuto < 5:
         ejecutar_mensual()
