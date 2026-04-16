@@ -1,10 +1,10 @@
 """
-SARA — Reportes automaticos
+SARA -- Reportes automaticos
 Diario: lunes a sabado 8am ET
 Semanal: domingos 7pm ET
 Mensual: dia 1 de cada mes 8am ET
 
-Destino: Telegram chat ID 483808943
+Destinatarios Telegram: 483808943, 1223584014
 """
 
 import os
@@ -23,7 +23,7 @@ logger = logging.getLogger("sara_reports")
 
 # ── Configuracion ────────────────────────────────────────────
 TELEGRAM_BOT_TOKEN = os.getenv("NOTIFY_BOT_TOKEN", "") or os.getenv("TELEGRAM_BOT_TOKEN", "")
-REPORT_CHAT_ID = "483808943"
+REPORT_CHAT_IDS = ["483808943", "1223584014"]
 
 SUPABASE_URL = os.getenv("SUPABASE_URL", "")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
@@ -34,7 +34,6 @@ GHL_BASE_URL = "https://services.leadconnectorhq.com"
 
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 
-# Stages que se consideran descartados
 STAGES_DESCARTADOS = {
     "no elegible", "no show", "reprogramar", "no interesado",
     "caido", "no completo", "reciclar", "no show / reprogramar",
@@ -56,23 +55,23 @@ def _enviar_telegram(mensaje: str):
     if not TELEGRAM_BOT_TOKEN:
         logger.error("[REPORT] TELEGRAM_BOT_TOKEN no configurado")
         return
-    try:
-        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-        r = httpx.post(url, json={
-            "chat_id": REPORT_CHAT_ID,
-            "text": mensaje,
-            "parse_mode": "Markdown"
-        }, timeout=10)
-        if r.status_code == 200:
-            logger.info("[REPORT] Reporte enviado a Telegram")
-        else:
-            logger.error(f"[REPORT] Error Telegram {r.status_code}: {r.text[:200]}")
-    except Exception as e:
-        logger.error(f"[REPORT] Error enviando Telegram: {e}")
+    for chat_id in REPORT_CHAT_IDS:
+        try:
+            url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+            r = httpx.post(url, json={
+                "chat_id": chat_id,
+                "text": mensaje,
+                "parse_mode": "Markdown"
+            }, timeout=10)
+            if r.status_code == 200:
+                logger.info(f"[REPORT] Reporte enviado a {chat_id}")
+            else:
+                logger.error(f"[REPORT] Error Telegram {chat_id} {r.status_code}: {r.text[:200]}")
+        except Exception as e:
+            logger.error(f"[REPORT] Error enviando a {chat_id}: {e}")
 
 
 def _obtener_sesiones_supabase(desde: datetime, hasta: datetime) -> list:
-    """Obtiene sesiones de WhatsApp de Supabase en un rango de fechas."""
     if not SUPABASE_URL or not SUPABASE_KEY:
         return []
     try:
@@ -82,7 +81,6 @@ def _obtener_sesiones_supabase(desde: datetime, hasta: datetime) -> list:
             "Content-Type": "application/json"
         }
         desde_iso = desde.isoformat()
-        hasta_iso = hasta.isoformat()
         r = httpx.get(
             f"{SUPABASE_URL}/rest/v1/sara_v2_sesiones",
             headers=headers,
@@ -102,7 +100,6 @@ def _obtener_sesiones_supabase(desde: datetime, hasta: datetime) -> list:
 
 
 def _obtener_contactos_ghl(desde: datetime) -> list:
-    """Obtiene contactos con tag lead_whatsapp creados desde una fecha."""
     if not GHL_API_KEY or not GHL_LOCATION_ID:
         return []
     try:
@@ -128,31 +125,26 @@ def _obtener_contactos_ghl(desde: datetime) -> list:
 
 
 def _clasificar_contacto(contacto: dict) -> str:
-    """Clasifica un contacto segun su stage y tags."""
     tags = set(t.lower() for t in contacto.get("tags", []))
-    stage = (contacto.get("pipelineStageId", "") or "").lower()
     stage_nombre = (contacto.get("stage", {}) or {}).get("name", "").lower()
 
     if tags & TAGS_CERRADOS:
         return "cerrado"
 
-    # Verificar stage por nombre
     for s in STAGES_DESCARTADOS:
-        if s in stage_nombre or s in stage:
+        if s in stage_nombre:
             return "descartado"
 
-    if "cita agendada" in stage_nombre or "cita_agendada" in stage:
+    if "cita agendada" in stage_nombre:
         return "agendado"
 
     return "en_seguimiento"
 
 
 def _analisis_semantico_claude(sesiones: list, periodo: str) -> str:
-    """Usa Claude para generar analisis semantico de las conversaciones."""
     if not ANTHROPIC_API_KEY or not sesiones:
         return "No hay suficientes datos para el analisis semantico."
 
-    # Extraer muestra de conversaciones (max 20 sesiones)
     muestra = []
     for sesion in sesiones[:20]:
         mensajes = sesion.get("mensajes", [])
@@ -161,7 +153,6 @@ def _analisis_semantico_claude(sesiones: list, periodo: str) -> str:
                 mensajes = json.loads(mensajes)
             except Exception:
                 continue
-        # Solo mensajes del cliente (role: user) y no muy largos
         textos = []
         for m in mensajes:
             if isinstance(m, dict) and m.get("role") == "user":
@@ -213,13 +204,11 @@ def _analisis_semantico_claude(sesiones: list, periodo: str) -> str:
     return "No se pudo generar el analisis semantico."
 
 
-# ── Generacion de reportes ────────────────────────────────────
+# ── Calculo de metricas ───────────────────────────────────────
 
 def _calcular_metricas(sesiones: list, contactos: list) -> dict:
-    """Calcula metricas cruzando Supabase y GHL."""
     total_sesiones = len(sesiones)
 
-    # Clasificar por temperatura desde Supabase
     calientes = tibios = frios = 0
     for s in sesiones:
         mensajes = s.get("mensajes", [])
@@ -228,7 +217,6 @@ def _calcular_metricas(sesiones: list, contactos: list) -> dict:
                 mensajes = json.loads(mensajes)
             except Exception:
                 mensajes = []
-        # Buscar temperatura en tool results
         for m in mensajes:
             if isinstance(m, dict) and m.get("role") == "user":
                 contenido = m.get("content", "")
@@ -249,7 +237,6 @@ def _calcular_metricas(sesiones: list, contactos: list) -> dict:
                                 except Exception:
                                     pass
 
-    # Clasificar contactos desde GHL
     agendados = cerrados = descartados = en_seguimiento = 0
     for c in contactos:
         clasificacion = _clasificar_contacto(c)
@@ -274,8 +261,9 @@ def _calcular_metricas(sesiones: list, contactos: list) -> dict:
     }
 
 
+# ── Reportes ─────────────────────────────────────────────────
+
 def ejecutar_diario():
-    """Reporte diario — se ejecuta lunes a sabado a las 8am ET."""
     ahora = _ahora_et()
     ayer_inicio = (ahora - timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
     ayer_fin = ayer_inicio.replace(hour=23, minute=59, second=59)
@@ -304,7 +292,6 @@ def ejecutar_diario():
 
 
 def ejecutar_semanal():
-    """Reporte semanal — se ejecuta domingos a las 7pm ET."""
     ahora = _ahora_et()
     inicio_semana = (ahora - timedelta(days=7)).replace(hour=0, minute=0, second=0, microsecond=0)
     semana_num = ahora.isocalendar()[1]
@@ -335,16 +322,14 @@ def ejecutar_semanal():
 
 
 def ejecutar_mensual():
-    """Reporte mensual — se ejecuta el dia 1 de cada mes a las 8am ET."""
     ahora = _ahora_et()
     mes_anterior = (ahora.replace(day=1) - timedelta(days=1))
     inicio_mes = mes_anterior.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    fin_mes = mes_anterior.replace(hour=23, minute=59, second=59)
     mes_str = mes_anterior.strftime("%B %Y")
 
     logger.info(f"[REPORT] Generando reporte mensual de {mes_str}")
 
-    sesiones = _obtener_sesiones_supabase(inicio_mes, fin_mes)
+    sesiones = _obtener_sesiones_supabase(inicio_mes, mes_anterior)
     contactos = _obtener_contactos_ghl(inicio_mes)
     metricas = _calcular_metricas(sesiones, contactos)
     semantica = _analisis_semantico_claude(sesiones, mes_str)
@@ -368,18 +353,11 @@ def ejecutar_mensual():
 # ── Verificacion de horario ───────────────────────────────────
 
 def verificar_y_ejecutar():
-    """
-    Verifica si toca ejecutar algun reporte segun la hora actual ET.
-    Llamado desde el heartbeat cada 5 minutos.
-    """
     ahora = _ahora_et()
     hora = ahora.hour
     minuto = ahora.minute
     dia_semana = ahora.weekday()  # 0=lunes, 6=domingo
     dia_mes = ahora.day
-
-    # Ventana de ejecucion: entre el minuto 0 y 9 de la hora objetivo
-    # para que el heartbeat de 5 min lo capture aunque no caiga exacto
 
     # Diario: 8am ET, lunes a sabado (0-5)
     if hora == 8 and minuto < 10 and dia_semana < 6:
