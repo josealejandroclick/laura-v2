@@ -270,6 +270,13 @@ class Heartbeat:
             except Exception as e:
                 logger.error(f"Error en reportes: {e}")
 
+            # Analizador semanal
+            try:
+                from reports.analyzer_report import verificar_y_ejecutar_analisis
+                verificar_y_ejecutar_analisis()
+            except Exception as e:
+                logger.error(f"Error en analizador: {e}")
+
             if leads or tareas:
                 logger.info(f"Ciclo {self.ciclos}: {len(leads)} follow-ups, {len(tareas)} cron")
 
