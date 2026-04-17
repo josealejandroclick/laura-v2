@@ -53,7 +53,7 @@ def _extraer_telefono(session_id: str) -> str:
 
 def _buscar_contacto_por_telefono(telefono: str) -> dict:
     """
-    Busca contacto en GHL por telefono.
+    Busca contacto en GHL por telefono usando endpoint correcto.
     Retorna: { "contacto_id": "...", "tags": [...] }
     """
     resultado = {"contacto_id": "", "tags": []}
@@ -67,24 +67,32 @@ def _buscar_contacto_por_telefono(telefono: str) -> dict:
         "Content-Type": "application/json"
     }
 
+    # Limpiar telefono para busqueda — remover prefijo de pais y caracteres especiales
+    telefono_limpio = telefono.replace("+", "").replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
+    # Usar los ultimos 10 digitos para busqueda
+    if len(telefono_limpio) > 10:
+        telefono_query = telefono_limpio[-10:]
+    else:
+        telefono_query = telefono_limpio
+
     try:
         r = httpx.get(
-            f"{GHL_BASE_URL}/contacts/search/duplicate",
-            params={"locationId": GHL_LOCATION_ID, "phone": telefono},
+            f"{GHL_BASE_URL}/contacts/",
             headers=headers,
+            params={"locationId": GHL_LOCATION_ID, "query": telefono_query},
             timeout=8
         )
         if r.status_code == 200:
-            data = r.json()
-            contacto = data.get("contact", None)
-            if contacto:
+            contactos = r.json().get("contacts", [])
+            if contactos:
+                contacto = contactos[0]
                 resultado["contacto_id"] = contacto.get("id", "")
                 resultado["tags"] = contacto.get("tags", [])
                 logger.info(f"[GHL] Contacto encontrado: {resultado['contacto_id']} | tags: {resultado['tags']}")
             else:
-                logger.info(f"[GHL] No se encontro contacto para {telefono}")
+                logger.info(f"[GHL] No se encontro contacto para {telefono_query}")
         else:
-            logger.warning(f"[GHL] Error buscando contacto {telefono}: {r.status_code}")
+            logger.warning(f"[GHL] Error buscando contacto {telefono_query}: {r.status_code}")
     except Exception as e:
         logger.warning(f"[GHL] Excepcion buscando contacto: {e}")
 
@@ -208,8 +216,7 @@ class WebhookHandler(BaseHTTPRequestHandler):
 
             logger.info(f"[{canal}] [{session_id}] {nombre or 'Anonimo'}: {texto[:60]}...")
 
-            # ── Obtener contacto_id y tags SIEMPRE por telefono ──────────────
-            # Buscamos siempre por telefono para garantizar tags actualizados
+            # Buscar contacto en GHL por telefono
             telefono = _extraer_telefono(session_id)
             datos_contacto = _buscar_contacto_por_telefono(telefono)
             contacto_id = datos_contacto.get("contacto_id", "") or contacto_id_payload
@@ -243,7 +250,6 @@ class WebhookHandler(BaseHTTPRequestHandler):
                         daemon=True
                     ).start()
                 return
-            # ─────────────────────────────────────────────────────────────────
 
             # Inyectar historial como contexto si el contacto existe en GHL
             if contacto_id:
@@ -297,6 +303,15 @@ class WebhookHandler(BaseHTTPRequestHandler):
             logger.info(f"Reply webhook enviado: {response.status_code}")
         except Exception as e:
             logger.error(f"Error enviando reply webhook: {e}")
+
+    def _respond(self, status: int, data: dict):
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.end_headers()
+        self.wfile.write(json.dumps(data, ensure_ascii=False).encode("utf-8"))
 
     def _respond(self, status: int, data: dict):
         self.send_response(status)
