@@ -6,6 +6,9 @@ Follow-up con intervalos variables:
   #2 -> 2 horas
   #3 -> 24 horas
   #4 -> 48 horas
+
+Follow-ups de WhatsApp se envian via GHL automaticamente.
+Follow-ups de Telegram se envian via bot de Telegram.
 """
 
 import json
@@ -13,6 +16,7 @@ import os
 import time
 import threading
 import logging
+import httpx
 from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Callable, Optional
@@ -32,6 +36,10 @@ MAX_FOLLOWUPS = len(FOLLOWUP_INTERVALS)
 DATA_DIR = os.getenv("SESSIONS_DIR", "data/sessions")
 CRON_FILE = os.path.join(os.getenv("SESSIONS_DIR", "data"), "cron_tasks.json")
 FOLLOWUP_FILE = os.path.join(os.getenv("SESSIONS_DIR", "data"), "followup_tracker.json")
+
+GHL_API_KEY = os.getenv("GHL_API_KEY", "")
+GHL_LOCATION_ID = os.getenv("GHL_LOCATION_ID", "")
+GHL_BASE_URL = "https://services.leadconnectorhq.com"
 
 
 # ============================================================
@@ -68,17 +76,15 @@ def registrar_actividad(session_id: str):
 
 def obtener_leads_para_followup() -> list:
     """
-    Devuelve lista de (session_id, followup_num) donde followup_num
-    indica cual follow-up toca enviar segun los intervalos configurados.
-    Solo incluye session_ids numericos validos de Telegram.
+    Devuelve lista de (session_id, followup_num, canal) donde:
+    - canal = "telegram" para IDs numericos
+    - canal = "whatsapp" para sesiones whatsapp_
     """
     tracker = _cargar_tracker()
     ahora = time.time()
     leads = []
 
     for session_id, data in tracker.items():
-        if not str(session_id).lstrip("-").isdigit():
-            continue
         if not data.get("activo", True):
             continue
 
@@ -92,7 +98,15 @@ def obtener_leads_para_followup() -> list:
         if enviados < len(FOLLOWUP_INTERVALS):
             minutos_requeridos = FOLLOWUP_INTERVALS[enviados]
             if minutos_transcurridos >= minutos_requeridos:
-                leads.append((session_id, enviados + 1))
+                # Determinar canal
+                if session_id.startswith("whatsapp_"):
+                    canal = "whatsapp"
+                elif str(session_id).lstrip("-").isdigit():
+                    canal = "telegram"
+                else:
+                    # Canal desconocido, omitir
+                    continue
+                leads.append((session_id, enviados + 1, canal))
 
     return leads
 
@@ -113,6 +127,113 @@ def desactivar_sesion(session_id: str):
     if session_id in tracker:
         tracker[session_id]["activo"] = False
         _guardar_tracker(tracker)
+
+
+# ============================================================
+# FOLLOW-UP VIA GHL WHATSAPP
+# ============================================================
+
+def _extraer_telefono_whatsapp(session_id: str) -> str:
+    """Extrae el numero de telefono de un session_id de WhatsApp."""
+    if session_id.startswith("whatsapp_"):
+        return session_id[len("whatsapp_"):]
+    return ""
+
+
+def _buscar_contacto_ghl_por_telefono(telefono: str) -> str:
+    """Busca el contacto_id en GHL por numero de telefono."""
+    if not GHL_API_KEY or not GHL_LOCATION_ID or not telefono:
+        return ""
+    try:
+        headers = {
+            "Authorization": f"Bearer {GHL_API_KEY}",
+            "Version": "2021-04-15",
+            "Content-Type": "application/json"
+        }
+        r = httpx.get(
+            f"{GHL_BASE_URL}/contacts/search/duplicate",
+            params={"locationId": GHL_LOCATION_ID, "phone": telefono},
+            headers=headers,
+            timeout=8
+        )
+        if r.status_code == 200:
+            contacto = r.json().get("contact", None)
+            if contacto:
+                return contacto.get("id", "")
+    except Exception as e:
+        logger.warning(f"[FOLLOWUP-GHL] Error buscando contacto {telefono}: {e}")
+    return ""
+
+
+def _enviar_followup_whatsapp(session_id: str, followup_num: int) -> bool:
+    """
+    Envia un follow-up por WhatsApp via GHL.
+    Retorna True si se envio correctamente.
+    """
+    if not GHL_API_KEY:
+        logger.warning("[FOLLOWUP-GHL] GHL_API_KEY no configurado")
+        return False
+
+    telefono = _extraer_telefono_whatsapp(session_id)
+    if not telefono:
+        logger.warning(f"[FOLLOWUP-GHL] No se pudo extraer telefono de {session_id}")
+        return False
+
+    contacto_id = _buscar_contacto_ghl_por_telefono(telefono)
+    if not contacto_id:
+        logger.warning(f"[FOLLOWUP-GHL] No se encontro contacto para {telefono}")
+        return False
+
+    # Generar mensaje de follow-up
+    mensaje = generar_mensaje_followup(followup_num)
+
+    headers = {
+        "Authorization": f"Bearer {GHL_API_KEY}",
+        "Version": "2021-04-15",
+        "Content-Type": "application/json"
+    }
+
+    try:
+        # Buscar conversacion activa
+        conv_r = httpx.get(
+            f"{GHL_BASE_URL}/conversations/search",
+            headers=headers,
+            params={"locationId": GHL_LOCATION_ID, "contactId": contacto_id},
+            timeout=10
+        )
+
+        conversation_id = None
+        if conv_r.status_code == 200:
+            convs = conv_r.json().get("conversations", [])
+            if convs:
+                conversation_id = convs[0].get("id")
+
+        if not conversation_id:
+            logger.warning(f"[FOLLOWUP-GHL] No se encontro conversacion para {contacto_id}")
+            return False
+
+        # Enviar mensaje
+        r = httpx.post(
+            f"{GHL_BASE_URL}/conversations/messages",
+            headers=headers,
+            json={
+                "type": "WhatsApp",
+                "conversationId": conversation_id,
+                "message": mensaje
+            },
+            timeout=10
+        )
+
+        if r.status_code in (200, 201):
+            logger.info(f"[FOLLOWUP-GHL] Follow-up #{followup_num} enviado a {telefono}")
+            return True
+        else:
+            logger.error(f"[FOLLOWUP-GHL] Error GHL {r.status_code}: {r.text[:200]}")
+            return False
+
+    except Exception as e:
+        logger.error(f"[FOLLOWUP-GHL] Excepcion enviando a {telefono}: {e}")
+        return False
 
 
 # ============================================================
@@ -243,14 +364,28 @@ class Heartbeat:
         try:
             # Follow-ups
             leads = obtener_leads_para_followup()
-            for session_id, followup_num in leads:
-                logger.info(f"Follow-up #{followup_num} para {session_id}")
-                if self.on_followup:
+            for session_id, followup_num, canal in leads:
+                logger.info(f"Follow-up #{followup_num} para {session_id} [{canal}]")
+
+                if canal == "whatsapp":
+                    # Enviar via GHL WhatsApp
                     try:
-                        self.on_followup(session_id, followup_num)
-                        marcar_followup_enviado(session_id)
+                        enviado = _enviar_followup_whatsapp(session_id, followup_num)
+                        if enviado:
+                            marcar_followup_enviado(session_id)
+                        else:
+                            logger.warning(f"[FOLLOWUP] No se pudo enviar follow-up WhatsApp a {session_id}")
                     except Exception as e:
-                        logger.error(f"Error en follow-up {session_id}: {e}")
+                        logger.error(f"Error en follow-up WhatsApp {session_id}: {e}")
+
+                elif canal == "telegram":
+                    # Enviar via bot de Telegram
+                    if self.on_followup:
+                        try:
+                            self.on_followup(session_id, followup_num)
+                            marcar_followup_enviado(session_id)
+                        except Exception as e:
+                            logger.error(f"Error en follow-up Telegram {session_id}: {e}")
 
             # Tareas cron
             tareas = obtener_tareas_pendientes()
@@ -293,7 +428,7 @@ class Heartbeat:
 FOLLOWUP_TEMPLATES = [
     # Follow-up #1 (30 min)
     (
-        "Hola solo queria asegurarme de que recibiste la informacion. "
+        "Hola, solo queria asegurarme de que recibiste la informacion. "
         "Te quedo alguna duda sobre las opciones que vimos? Aqui estoy."
     ),
     # Follow-up #2 (2 horas)
