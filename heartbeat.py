@@ -98,13 +98,11 @@ def obtener_leads_para_followup() -> list:
         if enviados < len(FOLLOWUP_INTERVALS):
             minutos_requeridos = FOLLOWUP_INTERVALS[enviados]
             if minutos_transcurridos >= minutos_requeridos:
-                # Determinar canal
                 if session_id.startswith("whatsapp_"):
                     canal = "whatsapp"
                 elif str(session_id).lstrip("-").isdigit():
                     canal = "telegram"
                 else:
-                    # Canal desconocido, omitir
                     continue
                 leads.append((session_id, enviados + 1, canal))
 
@@ -144,6 +142,14 @@ def _buscar_contacto_ghl_por_telefono(telefono: str) -> str:
     """Busca el contacto_id en GHL por numero de telefono."""
     if not GHL_API_KEY or not GHL_LOCATION_ID or not telefono:
         return ""
+
+    # Limpiar telefono — usar ultimos 10 digitos
+    telefono_limpio = telefono.replace("+", "").replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
+    if len(telefono_limpio) > 10:
+        telefono_query = telefono_limpio[-10:]
+    else:
+        telefono_query = telefono_limpio
+
     try:
         headers = {
             "Authorization": f"Bearer {GHL_API_KEY}",
@@ -151,17 +157,17 @@ def _buscar_contacto_ghl_por_telefono(telefono: str) -> str:
             "Content-Type": "application/json"
         }
         r = httpx.get(
-            f"{GHL_BASE_URL}/contacts/search/duplicate",
-            params={"locationId": GHL_LOCATION_ID, "phone": telefono},
+            f"{GHL_BASE_URL}/contacts/",
             headers=headers,
+            params={"locationId": GHL_LOCATION_ID, "query": telefono_query},
             timeout=8
         )
         if r.status_code == 200:
-            contacto = r.json().get("contact", None)
-            if contacto:
-                return contacto.get("id", "")
+            contactos = r.json().get("contacts", [])
+            if contactos:
+                return contactos[0].get("id", "")
     except Exception as e:
-        logger.warning(f"[FOLLOWUP-GHL] Error buscando contacto {telefono}: {e}")
+        logger.warning(f"[FOLLOWUP-GHL] Error buscando contacto {telefono_query}: {e}")
     return ""
 
 
@@ -184,7 +190,6 @@ def _enviar_followup_whatsapp(session_id: str, followup_num: int) -> bool:
         logger.warning(f"[FOLLOWUP-GHL] No se encontro contacto para {telefono}")
         return False
 
-    # Generar mensaje de follow-up
     mensaje = generar_mensaje_followup(followup_num)
 
     headers = {
@@ -368,18 +373,16 @@ class Heartbeat:
                 logger.info(f"Follow-up #{followup_num} para {session_id} [{canal}]")
 
                 if canal == "whatsapp":
-                    # Enviar via GHL WhatsApp
                     try:
                         enviado = _enviar_followup_whatsapp(session_id, followup_num)
                         if enviado:
                             marcar_followup_enviado(session_id)
                         else:
-                            logger.warning(f"[FOLLOWUP] No se pudo enviar follow-up WhatsApp a {session_id}")
+                            logger.warning(f"[FOLLOWUP] No se pudo enviar a {session_id}")
                     except Exception as e:
                         logger.error(f"Error en follow-up WhatsApp {session_id}: {e}")
 
                 elif canal == "telegram":
-                    # Enviar via bot de Telegram
                     if self.on_followup:
                         try:
                             self.on_followup(session_id, followup_num)
