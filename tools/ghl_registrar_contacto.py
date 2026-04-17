@@ -5,27 +5,29 @@ Crea o actualiza un contacto en GHL CRM.
 
 import json
 import os
+import logging
 import httpx
+
+logger = logging.getLogger("ghl_registrar_contacto")
 
 GHL_API_KEY = os.getenv("GHL_API_KEY", "")
 GHL_LOCATION_ID = os.getenv("GHL_LOCATION_ID", "")
 GHL_BASE_URL = "https://services.leadconnectorhq.com"
-GHL_HEADERS = {
-    "Authorization": f"Bearer {GHL_API_KEY}",
-    "Version": "2021-07-28",
-    "Content-Type": "application/json"
-}
 
 TOOL_SCHEMA = {
     "name": "ghl_registrar_contacto",
-    "description": "Crea o actualiza un contacto en el CRM de GHL con los datos del lead.",
+    "description": (
+        "Crea o actualiza un contacto en el CRM de GHL con los datos del lead. "
+        "Llamar siempre que el cliente de su nombre real para actualizar el contacto en GHL. "
+        "Tambien llamar al momento del cierre con todos los datos recopilados."
+    ),
     "input_schema": {
         "type": "object",
         "properties": {
-            "nombre": {"type": "string", "description": "Nombre completo del cliente"},
-            "telefono": {"type": "string", "description": "Número de teléfono con código de país, ej: +13051234567"},
+            "nombre": {"type": "string", "description": "Nombre completo real del cliente"},
+            "telefono": {"type": "string", "description": "Numero de telefono con codigo de pais, ej: +13051234567"},
             "email": {"type": "string", "description": "Email del cliente (opcional)"},
-            "zip": {"type": "string", "description": "Código postal"},
+            "zip": {"type": "string", "description": "Codigo postal"},
             "ciudad": {"type": "string", "description": "Ciudad"},
             "notas": {"type": "string", "description": "Notas adicionales sobre el lead"},
             "fuente": {"type": "string", "description": "Fuente del lead: organico, ad_dental, ad_embarazadas, etc."}
@@ -33,6 +35,12 @@ TOOL_SCHEMA = {
         "required": ["nombre", "telefono"]
     }
 }
+
+
+def _limpiar_telefono(telefono: str) -> str:
+    """Extrae los ultimos 10 digitos del telefono para busqueda."""
+    limpio = telefono.replace("+", "").replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
+    return limpio[-10:] if len(limpio) > 10 else limpio
 
 
 def ejecutar(nombre: str, telefono: str, email: str = "", zip: str = "",
@@ -47,22 +55,26 @@ def ejecutar(nombre: str, telefono: str, email: str = "", zip: str = "",
     }
 
     try:
-        # Buscar si el contacto ya existe por teléfono
+        # Buscar contacto existente por telefono
+        contacto_id = None
+        telefono_query = _limpiar_telefono(telefono)
+
         busqueda = httpx.get(
-            f"{GHL_BASE_URL}/contacts/search",
+            f"{GHL_BASE_URL}/contacts/",
             headers=headers,
-            params={"locationId": GHL_LOCATION_ID, "phone": telefono},
+            params={"locationId": GHL_LOCATION_ID, "query": telefono_query},
             timeout=10
         )
 
-        contacto_id = None
         if busqueda.status_code == 200:
-            data = busqueda.json()
-            contactos = data.get("contacts", [])
+            contactos = busqueda.json().get("contacts", [])
             if contactos:
                 contacto_id = contactos[0].get("id")
+                logger.info(f"[GHL] Contacto existente encontrado: {contacto_id}")
+        else:
+            logger.warning(f"[GHL] Error buscando contacto {telefono_query}: {busqueda.status_code}")
 
-        # Armar payload
+        # Armar payload con nombre real del cliente
         nombre_parts = nombre.strip().split(" ", 1)
         payload = {
             "locationId": GHL_LOCATION_ID,
@@ -70,7 +82,7 @@ def ejecutar(nombre: str, telefono: str, email: str = "", zip: str = "",
             "lastName": nombre_parts[1] if len(nombre_parts) > 1 else "",
             "phone": telefono,
             "source": fuente,
-            "tags": [fuente, "sara-bot"],
+            "tags": [fuente, "sara-bot", "lead_whatsapp"],
         }
         if email:
             payload["email"] = email
@@ -82,7 +94,7 @@ def ejecutar(nombre: str, telefono: str, email: str = "", zip: str = "",
             payload["customFields"] = [{"key": "notas_sara", "value": notas}]
 
         if contacto_id:
-            # Actualizar contacto existente
+            # Actualizar contacto existente — incluye nombre real
             r = httpx.put(
                 f"{GHL_BASE_URL}/contacts/{contacto_id}",
                 headers=headers,
@@ -98,9 +110,11 @@ def ejecutar(nombre: str, telefono: str, email: str = "", zip: str = "",
                 timeout=10
             )
 
+        logger.info(f"[GHL] Registrar contacto {nombre}: {r.status_code}")
+
         if r.status_code in (200, 201):
             data = r.json()
-            cid = data.get("contact", {}).get("id") or contacto_id
+            cid = data.get("contact", {}).get("id") or contacto_id or ""
             return json.dumps({
                 "exito": True,
                 "contacto_id": cid,
@@ -108,10 +122,12 @@ def ejecutar(nombre: str, telefono: str, email: str = "", zip: str = "",
                 "mensaje": f"Contacto {nombre} registrado en GHL."
             }, ensure_ascii=False)
         else:
+            logger.error(f"[GHL] Error {r.status_code}: {r.text[:200]}")
             return json.dumps({
                 "exito": False,
-                "error": f"GHL respondió {r.status_code}: {r.text[:200]}"
+                "error": f"GHL respondio {r.status_code}: {r.text[:200]}"
             })
 
     except Exception as e:
+        logger.error(f"[GHL] Excepcion: {e}")
         return json.dumps({"exito": False, "error": str(e)})
