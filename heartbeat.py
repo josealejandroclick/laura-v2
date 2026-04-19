@@ -61,10 +61,6 @@ def _guardar_tracker(tracker: dict):
 
 
 def registrar_actividad(session_id: str):
-    """
-    Marca que hubo actividad en una sesion.
-    Resetea el contador de follow-ups cuando el cliente responde.
-    """
     tracker = _cargar_tracker()
     tracker[session_id] = {
         "ultimo_mensaje": time.time(),
@@ -75,11 +71,6 @@ def registrar_actividad(session_id: str):
 
 
 def obtener_leads_para_followup() -> list:
-    """
-    Devuelve lista de (session_id, followup_num, canal) donde:
-    - canal = "telegram" para IDs numericos
-    - canal = "whatsapp" para sesiones whatsapp_
-    """
     tracker = _cargar_tracker()
     ahora = time.time()
     leads = []
@@ -132,30 +123,31 @@ def desactivar_sesion(session_id: str):
 # ============================================================
 
 def _extraer_telefono_whatsapp(session_id: str) -> str:
-    """Extrae el numero de telefono de un session_id de WhatsApp."""
     if session_id.startswith("whatsapp_"):
         return session_id[len("whatsapp_"):]
     return ""
 
 
-def _buscar_contacto_ghl_por_telefono(telefono: str) -> str:
-    """Busca el contacto_id en GHL por numero de telefono."""
+def _buscar_contacto_ghl_por_telefono(telefono: str) -> dict:
+    """
+    Busca contacto en GHL y retorna dict con contacto_id y conversation_id.
+    """
+    resultado = {"contacto_id": "", "conversation_id": ""}
+
     if not GHL_API_KEY or not GHL_LOCATION_ID or not telefono:
-        return ""
+        return resultado
 
     # Limpiar telefono — usar ultimos 10 digitos
     telefono_limpio = telefono.replace("+", "").replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
-    if len(telefono_limpio) > 10:
-        telefono_query = telefono_limpio[-10:]
-    else:
-        telefono_query = telefono_limpio
+    telefono_query = telefono_limpio[-10:] if len(telefono_limpio) > 10 else telefono_limpio
+
+    headers = {
+        "Authorization": f"Bearer {GHL_API_KEY}",
+        "Version": "2021-04-15",
+        "Content-Type": "application/json"
+    }
 
     try:
-        headers = {
-            "Authorization": f"Bearer {GHL_API_KEY}",
-            "Version": "2021-04-15",
-            "Content-Type": "application/json"
-        }
         r = httpx.get(
             f"{GHL_BASE_URL}/contacts/",
             headers=headers,
@@ -165,10 +157,25 @@ def _buscar_contacto_ghl_por_telefono(telefono: str) -> str:
         if r.status_code == 200:
             contactos = r.json().get("contacts", [])
             if contactos:
-                return contactos[0].get("id", "")
+                contacto_id = contactos[0].get("id", "")
+                resultado["contacto_id"] = contacto_id
+
+                # Buscar conversacion activa
+                if contacto_id:
+                    conv_r = httpx.get(
+                        f"{GHL_BASE_URL}/conversations/search",
+                        headers=headers,
+                        params={"locationId": GHL_LOCATION_ID, "contactId": contacto_id},
+                        timeout=8
+                    )
+                    if conv_r.status_code == 200:
+                        convs = conv_r.json().get("conversations", [])
+                        if convs:
+                            resultado["conversation_id"] = convs[0].get("id", "")
     except Exception as e:
         logger.warning(f"[FOLLOWUP-GHL] Error buscando contacto {telefono_query}: {e}")
-    return ""
+
+    return resultado
 
 
 def _enviar_followup_whatsapp(session_id: str, followup_num: int) -> bool:
@@ -185,9 +192,16 @@ def _enviar_followup_whatsapp(session_id: str, followup_num: int) -> bool:
         logger.warning(f"[FOLLOWUP-GHL] No se pudo extraer telefono de {session_id}")
         return False
 
-    contacto_id = _buscar_contacto_ghl_por_telefono(telefono)
+    datos = _buscar_contacto_ghl_por_telefono(telefono)
+    contacto_id = datos.get("contacto_id", "")
+    conversation_id = datos.get("conversation_id", "")
+
     if not contacto_id:
         logger.warning(f"[FOLLOWUP-GHL] No se encontro contacto para {telefono}")
+        return False
+
+    if not conversation_id:
+        logger.warning(f"[FOLLOWUP-GHL] No se encontro conversacion para {contacto_id}")
         return False
 
     mensaje = generar_mensaje_followup(followup_num)
@@ -199,31 +213,13 @@ def _enviar_followup_whatsapp(session_id: str, followup_num: int) -> bool:
     }
 
     try:
-        # Buscar conversacion activa
-        conv_r = httpx.get(
-            f"{GHL_BASE_URL}/conversations/search",
-            headers=headers,
-            params={"locationId": GHL_LOCATION_ID, "contactId": contacto_id},
-            timeout=10
-        )
-
-        conversation_id = None
-        if conv_r.status_code == 200:
-            convs = conv_r.json().get("conversations", [])
-            if convs:
-                conversation_id = convs[0].get("id")
-
-        if not conversation_id:
-            logger.warning(f"[FOLLOWUP-GHL] No se encontro conversacion para {contacto_id}")
-            return False
-
-        # Enviar mensaje
         r = httpx.post(
             f"{GHL_BASE_URL}/conversations/messages",
             headers=headers,
             json={
                 "type": "WhatsApp",
                 "conversationId": conversation_id,
+                "contactId": contacto_id,
                 "message": mensaje
             },
             timeout=10
