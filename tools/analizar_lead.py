@@ -1,12 +1,15 @@
 """
 Tool: analizar_lead
-Clasifica la temperatura del lead y envia notificacion al grupo de Telegram,
-correo electronico, y nota interna en GHL asignada a Kriza.
+Clasifica la temperatura del lead, notifica al equipo via Telegram,
+email y nota interna en GHL, y actualiza temperatura en Supabase.
 """
 
 import json
 import os
+import logging
 import httpx
+
+logger = logging.getLogger("analizar_lead")
 
 NOTIFY_BOT_TOKEN = os.getenv("NOTIFY_BOT_TOKEN", "") or os.getenv("TELEGRAM_BOT_TOKEN", "")
 NOTIFY_CHAT_ID = os.getenv("NOTIFY_CHAT_ID", "")
@@ -18,6 +21,9 @@ EMAIL_PASSWORD = os.getenv("EMAIL_APP_PASSWORD", "")
 GHL_API_KEY = os.getenv("GHL_API_KEY", "")
 GHL_BASE_URL = "https://services.leadconnectorhq.com"
 GHL_KRIZA_ID = "kvk2jGxOZimsfr2hlL29"
+
+SUPABASE_URL = os.getenv("SUPABASE_URL", "")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
 
 TOOL_SCHEMA = {
     "name": "analizar_lead",
@@ -62,11 +68,7 @@ TOOL_SCHEMA = {
             },
             "datos_cotizacion": {
                 "type": "object",
-                "description": (
-                    "Datos de la cotizacion si ya se proceso: "
-                    "zip, fpl_porcentaje, aptc_mensual, opciones_para_asesor "
-                    "(basico_mensual, medium_mensual, full_mensual), mejor_plan"
-                )
+                "description": "Datos de la cotizacion si ya se proceso"
             },
             "chat_id": {
                 "type": "string",
@@ -100,11 +102,10 @@ def _enviar_email(asunto: str, cuerpo: str):
             server.login(EMAIL_FROM, EMAIL_PASSWORD)
             server.sendmail(EMAIL_FROM, EMAIL_TO, msg.as_string())
     except Exception as e:
-        print(f"[EMAIL] Error: {e}")
+        logger.error(f"[EMAIL] Error: {e}")
 
 
 def _crear_nota_ghl(contacto_id: str, cuerpo: str):
-    """Crea una nota interna en GHL en el contacto, asignada a Kriza."""
     if not GHL_API_KEY or not contacto_id:
         return
     try:
@@ -113,20 +114,53 @@ def _crear_nota_ghl(contacto_id: str, cuerpo: str):
             "Version": "2021-04-15",
             "Content-Type": "application/json"
         }
-        payload = {
-            "body": cuerpo,
-            "userId": GHL_KRIZA_ID
-        }
         r = httpx.post(
             f"{GHL_BASE_URL}/contacts/{contacto_id}/notes",
             headers=headers,
-            json=payload,
+            json={"body": cuerpo, "userId": GHL_KRIZA_ID},
             timeout=8
         )
         if r.status_code not in (200, 201):
-            print(f"[GHL NOTA] Error {r.status_code}: {r.text[:200]}")
+            logger.warning(f"[GHL NOTA] Error {r.status_code}: {r.text[:200]}")
     except Exception as e:
-        print(f"[GHL NOTA] Error: {e}")
+        logger.warning(f"[GHL NOTA] Error: {e}")
+
+
+def _actualizar_supabase(session_id: str, temperatura: str, plan_interes: str = "",
+                          nombre: str = "", datos_cotizacion: dict = None):
+    """Actualiza campos del lead en Supabase."""
+    if not SUPABASE_URL or not SUPABASE_KEY or not session_id:
+        return
+    try:
+        headers = {
+            "apikey": SUPABASE_KEY,
+            "Authorization": f"Bearer {SUPABASE_KEY}",
+            "Content-Type": "application/json",
+            "Prefer": "return=minimal"
+        }
+        payload = {"temperatura": temperatura.lower()}
+        if nombre:
+            payload["nombre"] = nombre
+        if plan_interes:
+            payload["plan_interes"] = plan_interes
+        if datos_cotizacion and isinstance(datos_cotizacion, dict):
+            payload["datos_cotizacion"] = datos_cotizacion
+            if datos_cotizacion.get("zip"):
+                payload["zip"] = datos_cotizacion["zip"]
+
+        r = httpx.patch(
+            f"{SUPABASE_URL}/rest/v1/sara_v2_sesiones",
+            headers=headers,
+            params={"session_id": f"eq.{session_id}"},
+            json=payload,
+            timeout=8
+        )
+        if r.status_code in (200, 204):
+            logger.info(f"[SUPABASE] Temperatura actualizada: {session_id} -> {temperatura}")
+        else:
+            logger.warning(f"[SUPABASE] Error {r.status_code}: {r.text[:200]}")
+    except Exception as e:
+        logger.warning(f"[SUPABASE] Error actualizando: {e}")
 
 
 def ejecutar(
@@ -141,7 +175,6 @@ def ejecutar(
     contacto_id: str = "",
     **kwargs
 ) -> str:
-    emoji_map = {"CALIENTE": "CALIENTE", "TIBIO": "TIBIO", "FRIO": "FRIO"}
     emoji_icon = {"CALIENTE": "🔥", "TIBIO": "🌡", "FRIO": "❄️"}
     emoji = emoji_icon.get(temperatura, "❓")
 
@@ -184,10 +217,9 @@ def ejecutar(
         if opciones:
             lineas += ["", "*COTIZACION:*"]
             if mejor:
-                issuer = mejor.get("issuer", "N/A")
                 lineas += [
                     f"Plan: {mejor.get('nombre', 'N/A')[:45]}",
-                    f"Compania: {issuer}",
+                    f"Compania: {mejor.get('issuer', 'N/A')}",
                     f"Con subsidio: *${int(mejor.get('precio_con_subsidio', 0))}/mes*",
                     f"Deducible: ${int(mejor.get('deducible', 0)):,} | Max bolsillo: ${int(mejor.get('moop', 0)):,}",
                     f"FPL: {fpl}% | APTC: ${int(aptc)}/mes" + (f" | {csr}" if csr else ""),
@@ -217,7 +249,7 @@ def ejecutar(
             }, timeout=8)
             enviado = r.status_code == 200
         except Exception as e:
-            print(f"[NOTIF] Error Telegram: {e}")
+            logger.error(f"[NOTIF] Error Telegram: {e}")
 
     # 2. Email
     emoji_texto = {"CALIENTE": "🔥 LEAD CALIENTE", "TIBIO": "🌡 LEAD TIBIO", "FRIO": "❄️ LEAD FRIO"}
@@ -237,24 +269,16 @@ def ejecutar(
             nota_cuerpo += f"Plan de interes: {plan_interes}\n"
         _crear_nota_ghl(contacto_id, nota_cuerpo)
 
-    # 4. Actualizar Supabase dashboard
-    if _actualizar_lead and chat_id:
-        try:
-            campos_dashboard = {
-                "temperatura": temperatura.lower(),
-                "estado": "en_seguimiento" if temperatura in ("TIBIO", "FRIO") else "agendado",
-            }
-            if nombre_lead:
-                campos_dashboard["nombre"] = nombre_lead
-            if plan_interes:
-                campos_dashboard["plan_interes"] = plan_interes
-            if datos_cotizacion and isinstance(datos_cotizacion, dict):
-                campos_dashboard["datos_cotizacion"] = datos_cotizacion
-                if datos_cotizacion.get("zip"):
-                    campos_dashboard["zip"] = datos_cotizacion["zip"]
-            _actualizar_lead(chat_id, **campos_dashboard)
-        except Exception as e:
-            print(f"[ANALIZAR] Error actualizando dashboard: {e}")
+    # 4. Actualizar temperatura en Supabase
+    session_id = kwargs.get("session_id", "") or chat_id or ""
+    if session_id:
+        _actualizar_supabase(
+            session_id=session_id,
+            temperatura=temperatura,
+            plan_interes=plan_interes,
+            nombre=nombre_lead,
+            datos_cotizacion=datos_cotizacion if isinstance(datos_cotizacion, dict) else None
+        )
 
     return json.dumps({
         "exito": True,
