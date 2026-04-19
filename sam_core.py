@@ -25,20 +25,39 @@ except ImportError:
 
 
 def _contexto_tiempo() -> str:
-    """Devuelve fecha, hora y si es horario de oficina en zona ET."""
+    """Devuelve fecha, hora y fechas precalculadas para evitar errores de calculo."""
     try:
+        from datetime import timedelta
         ahora = datetime.now(_TZ_ET) if _TZ_ET else datetime.now()
-        dia_semana = ["lunes","martes","miercoles","jueves","viernes","sabado","domingo"][ahora.weekday()]
+        dias = ["lunes","martes","miercoles","jueves","viernes","sabado","domingo"]
+        dia_semana = dias[ahora.weekday()]
         hora_str = ahora.strftime("%I:%M %p")
         fecha_str = ahora.strftime("%d/%m/%Y")
-        es_oficina = ahora.weekday() < 5 and 8 <= ahora.hour < 18
-        horario = "HORARIO DE OFICINA -- un asesor puede llamar dentro de la proxima media hora" if es_oficina else "FUERA DE HORARIO -- el asesor contacta al siguiente dia habil"
+        es_oficina = ahora.weekday() < 5 and 10 <= ahora.hour < 19
+
+        # Precalcular manana
+        manana = ahora + timedelta(days=1)
+        dia_manana = dias[manana.weekday()]
+        fecha_manana = manana.strftime("%d/%m/%Y")
+
+        # Precalcular proximo dia habil (lunes a viernes)
+        proximo_habil = ahora + timedelta(days=1)
+        while proximo_habil.weekday() >= 5:
+            proximo_habil += timedelta(days=1)
+        dia_proximo_habil = dias[proximo_habil.weekday()]
+        fecha_proximo_habil = proximo_habil.strftime("%d/%m/%Y")
+
+        horario = "HORARIO DE LLAMADAS ACTIVO -- un asesor puede llamar ahora" if es_oficina else "FUERA DE HORARIO DE LLAMADAS -- el asesor contacta el proximo dia habil"
+
         return (
             f"[CONTEXTO DEL SISTEMA]\n"
-            f"Fecha actual: {dia_semana} {fecha_str}\n"
+            f"Hoy es: {dia_semana} {fecha_str}\n"
             f"Hora actual (ET): {hora_str}\n"
             f"Estado: {horario}\n"
-            f"Si el cliente pide que lo llamen 'manana', la fecha correcta es {(ahora).strftime('%d/%m/%Y')} sumando 1 dia.\n"
+            f"Manana es: {dia_manana} {fecha_manana}\n"
+            f"Proximo dia habil: {dia_proximo_habil} {fecha_proximo_habil}\n"
+            f"IMPORTANTE: Usar SIEMPRE estas fechas exactas. NUNCA calcules fechas por tu cuenta.\n"
+            f"Cuando confirmes una cita, usa el formato: 'el {dia_proximo_habil} {fecha_proximo_habil} a las X'\n"
             f"[FIN CONTEXTO]"
         )
     except Exception:
