@@ -8,7 +8,10 @@ Follow-up con intervalos variables:
   #4 -> 48 horas
 
 Follow-ups de WhatsApp se envian via GHL automaticamente.
-Follow-ups de Telegram se envian via bot de Telegram.
+Antes de cada follow-up verifica tags del contacto:
+- humano_activo -> detener seguimiento
+- p_cliente_cerrado / cliente_dental -> detener seguimiento
+- p_cita_agendada -> no vender, solo recordatorio 30 min antes de la cita
 """
 
 import json
@@ -40,6 +43,15 @@ FOLLOWUP_FILE = os.path.join(os.getenv("SESSIONS_DIR", "data"), "followup_tracke
 GHL_API_KEY = os.getenv("GHL_API_KEY", "")
 GHL_LOCATION_ID = os.getenv("GHL_LOCATION_ID", "")
 GHL_BASE_URL = "https://services.leadconnectorhq.com"
+
+# Tags que detienen el seguimiento completamente
+TAGS_DETENER = {"humano_activo", "p_cliente_cerrado", "cliente_dental"}
+
+# Tag que cambia el seguimiento a recordatorio de cita
+TAG_CITA_AGENDADA = "p_cita_agendada"
+
+# Control para recordatorios ya enviados (evitar duplicados)
+_recordatorios_enviados = set()
 
 
 # ============================================================
@@ -119,7 +131,7 @@ def desactivar_sesion(session_id: str):
 
 
 # ============================================================
-# FOLLOW-UP VIA GHL WHATSAPP
+# GHL — VERIFICACION DE TAGS Y CITAS
 # ============================================================
 
 def _extraer_telefono_whatsapp(session_id: str) -> str:
@@ -128,16 +140,21 @@ def _extraer_telefono_whatsapp(session_id: str) -> str:
     return ""
 
 
-def _buscar_contacto_ghl_por_telefono(telefono: str) -> dict:
+def _buscar_datos_contacto_ghl(telefono: str) -> dict:
     """
-    Busca contacto en GHL y retorna dict con contacto_id y conversation_id.
+    Busca contacto en GHL y retorna:
+    { contacto_id, conversation_id, tags, proxima_cita_iso }
     """
-    resultado = {"contacto_id": "", "conversation_id": ""}
+    resultado = {
+        "contacto_id": "",
+        "conversation_id": "",
+        "tags": [],
+        "proxima_cita_iso": ""
+    }
 
     if not GHL_API_KEY or not GHL_LOCATION_ID or not telefono:
         return resultado
 
-    # Limpiar telefono — usar ultimos 10 digitos
     telefono_limpio = telefono.replace("+", "").replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
     telefono_query = telefono_limpio[-10:] if len(telefono_limpio) > 10 else telefono_limpio
 
@@ -148,6 +165,7 @@ def _buscar_contacto_ghl_por_telefono(telefono: str) -> dict:
     }
 
     try:
+        # Buscar contacto
         r = httpx.get(
             f"{GHL_BASE_URL}/contacts/",
             headers=headers,
@@ -156,55 +174,78 @@ def _buscar_contacto_ghl_por_telefono(telefono: str) -> dict:
         )
         if r.status_code == 200:
             contactos = r.json().get("contacts", [])
-            if contactos:
-                contacto_id = contactos[0].get("id", "")
-                resultado["contacto_id"] = contacto_id
+            if not contactos:
+                return resultado
 
-                # Buscar conversacion activa
-                if contacto_id:
-                    conv_r = httpx.get(
-                        f"{GHL_BASE_URL}/conversations/search",
+            contacto = contactos[0]
+            contacto_id = contacto.get("id", "")
+            resultado["contacto_id"] = contacto_id
+            resultado["tags"] = contacto.get("tags", [])
+
+            # Buscar conversacion
+            if contacto_id:
+                conv_r = httpx.get(
+                    f"{GHL_BASE_URL}/conversations/search",
+                    headers=headers,
+                    params={"locationId": GHL_LOCATION_ID, "contactId": contacto_id},
+                    timeout=8
+                )
+                if conv_r.status_code == 200:
+                    convs = conv_r.json().get("conversations", [])
+                    if convs:
+                        resultado["conversation_id"] = convs[0].get("id", "")
+
+                # Buscar proxima cita si tiene tag p_cita_agendada
+                if TAG_CITA_AGENDADA in resultado["tags"]:
+                    apt_r = httpx.get(
+                        f"{GHL_BASE_URL}/contacts/{contacto_id}/appointments",
                         headers=headers,
-                        params={"locationId": GHL_LOCATION_ID, "contactId": contacto_id},
                         timeout=8
                     )
-                    if conv_r.status_code == 200:
-                        convs = conv_r.json().get("conversations", [])
-                        if convs:
-                            resultado["conversation_id"] = convs[0].get("id", "")
+                    if apt_r.status_code == 200:
+                        events = apt_r.json().get("events", [])
+                        ahora_iso = datetime.utcnow().isoformat()
+                        # Buscar cita futura mas proxima
+                        futuras = [
+                            e for e in events
+                            if e.get("startTime", "") > ahora_iso
+                            and e.get("appointmentStatus") == "confirmed"
+                            and not e.get("deleted", False)
+                        ]
+                        if futuras:
+                            futuras.sort(key=lambda x: x.get("startTime", ""))
+                            resultado["proxima_cita_iso"] = futuras[0].get("startTime", "")
+
     except Exception as e:
-        logger.warning(f"[FOLLOWUP-GHL] Error buscando contacto {telefono_query}: {e}")
+        logger.warning(f"[FOLLOWUP-GHL] Error buscando datos de {telefono_query}: {e}")
 
     return resultado
 
 
-def _enviar_followup_whatsapp(session_id: str, followup_num: int) -> bool:
+def _debe_enviar_recordatorio_cita(cita_iso: str, session_id: str) -> bool:
     """
-    Envia un follow-up por WhatsApp via GHL.
-    Retorna True si se envio correctamente.
+    Verifica si faltan entre 25 y 35 minutos para la cita.
+    Evita enviar el recordatorio mas de una vez.
     """
-    if not GHL_API_KEY:
-        logger.warning("[FOLLOWUP-GHL] GHL_API_KEY no configurado")
+    if not cita_iso or session_id in _recordatorios_enviados:
         return False
 
-    telefono = _extraer_telefono_whatsapp(session_id)
-    if not telefono:
-        logger.warning(f"[FOLLOWUP-GHL] No se pudo extraer telefono de {session_id}")
+    try:
+        # GHL devuelve UTC sin timezone
+        cita_dt = datetime.fromisoformat(cita_iso.replace(" ", "T"))
+        ahora_utc = datetime.utcnow()
+        diff_minutos = (cita_dt - ahora_utc).total_seconds() / 60
+
+        return 25 <= diff_minutos <= 35
+    except Exception as e:
+        logger.warning(f"[FOLLOWUP] Error calculando tiempo cita: {e}")
         return False
 
-    datos = _buscar_contacto_ghl_por_telefono(telefono)
-    contacto_id = datos.get("contacto_id", "")
-    conversation_id = datos.get("conversation_id", "")
 
-    if not contacto_id:
-        logger.warning(f"[FOLLOWUP-GHL] No se encontro contacto para {telefono}")
+def _enviar_mensaje_ghl(conversation_id: str, contacto_id: str, mensaje: str) -> bool:
+    """Envia un mensaje WhatsApp via GHL."""
+    if not GHL_API_KEY or not conversation_id or not contacto_id:
         return False
-
-    if not conversation_id:
-        logger.warning(f"[FOLLOWUP-GHL] No se encontro conversacion para {contacto_id}")
-        return False
-
-    mensaje = generar_mensaje_followup(followup_num)
 
     headers = {
         "Authorization": f"Bearer {GHL_API_KEY}",
@@ -224,17 +265,77 @@ def _enviar_followup_whatsapp(session_id: str, followup_num: int) -> bool:
             },
             timeout=10
         )
-
-        if r.status_code in (200, 201):
-            logger.info(f"[FOLLOWUP-GHL] Follow-up #{followup_num} enviado a {telefono}")
-            return True
-        else:
-            logger.error(f"[FOLLOWUP-GHL] Error GHL {r.status_code}: {r.text[:200]}")
-            return False
-
+        return r.status_code in (200, 201)
     except Exception as e:
-        logger.error(f"[FOLLOWUP-GHL] Excepcion enviando a {telefono}: {e}")
+        logger.error(f"[FOLLOWUP-GHL] Excepcion enviando mensaje: {e}")
         return False
+
+
+def _procesar_followup_whatsapp(session_id: str, followup_num: int) -> bool:
+    """
+    Procesa un follow-up de WhatsApp con logica inteligente:
+    1. Verifica tags del contacto
+    2. Si tiene tag de detener -> desactiva sesion
+    3. Si tiene cita agendada -> envia recordatorio si toca
+    4. Si no tiene cita -> envia follow-up de ventas normal
+    """
+    telefono = _extraer_telefono_whatsapp(session_id)
+    if not telefono:
+        return False
+
+    datos = _buscar_datos_contacto_ghl(telefono)
+    contacto_id = datos.get("contacto_id", "")
+    conversation_id = datos.get("conversation_id", "")
+    tags = set(datos.get("tags", []))
+    proxima_cita = datos.get("proxima_cita_iso", "")
+
+    # Verificar tags que detienen el seguimiento
+    if tags & TAGS_DETENER:
+        logger.info(f"[FOLLOWUP] {session_id} tiene tag de detener ({tags & TAGS_DETENER}) — desactivando")
+        desactivar_sesion(session_id)
+        return True  # No es un error, es intencional
+
+    # Verificar si tiene cita agendada
+    if TAG_CITA_AGENDADA in tags:
+        if proxima_cita and _debe_enviar_recordatorio_cita(proxima_cita, session_id):
+            mensaje = (
+                "Hola! Te recordamos que en unos minutos te contacta nuestro asesor. "
+                "Queda atenta a la llamada 😊"
+            )
+            if contacto_id and conversation_id:
+                enviado = _enviar_mensaje_ghl(conversation_id, contacto_id, mensaje)
+                if enviado:
+                    _recordatorios_enviados.add(session_id)
+                    desactivar_sesion(session_id)
+                    logger.info(f"[FOLLOWUP] Recordatorio de cita enviado a {telefono}")
+                    return True
+        else:
+            # Tiene cita pero no es momento del recordatorio — no hacer nada
+            logger.info(f"[FOLLOWUP] {session_id} tiene cita agendada — sin follow-up de ventas")
+            # Si la cita ya paso, desactivar
+            if proxima_cita:
+                try:
+                    cita_dt = datetime.fromisoformat(proxima_cita.replace(" ", "T"))
+                    if datetime.utcnow() > cita_dt + timedelta(hours=1):
+                        desactivar_sesion(session_id)
+                except Exception:
+                    pass
+        return True  # No enviar follow-up de ventas
+
+    # Sin tags especiales — enviar follow-up de ventas normal
+    if not contacto_id or not conversation_id:
+        logger.warning(f"[FOLLOWUP-GHL] No se encontro contacto/conversacion para {telefono}")
+        return False
+
+    mensaje = generar_mensaje_followup(followup_num)
+    enviado = _enviar_mensaje_ghl(conversation_id, contacto_id, mensaje)
+
+    if enviado:
+        logger.info(f"[FOLLOWUP-GHL] Follow-up #{followup_num} enviado a {telefono}")
+    else:
+        logger.error(f"[FOLLOWUP-GHL] Error enviando follow-up a {telefono}")
+
+    return enviado
 
 
 # ============================================================
@@ -370,7 +471,7 @@ class Heartbeat:
 
                 if canal == "whatsapp":
                     try:
-                        enviado = _enviar_followup_whatsapp(session_id, followup_num)
+                        enviado = _procesar_followup_whatsapp(session_id, followup_num)
                         if enviado:
                             marcar_followup_enviado(session_id)
                         else:
