@@ -1,5 +1,6 @@
 """
-Sara — Configuración central.
+Laura — Configuración central.
+Bot de reclutamiento EQUITY - MKAddesh.
 Cada despliegue tiene su propio .env con sus credenciales.
 """
 
@@ -13,26 +14,34 @@ ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 MODEL_ID = os.getenv("MODEL_ID", "claude-opus-4-5")
 
 # --- Identidad ---
-AGENT_NAME = os.getenv("AGENT_NAME", "Sara")
-SOUL_FILE = os.getenv("SOUL_FILE", "souls/sara_mkaddesh.md")
+AGENT_NAME = os.getenv("AGENT_NAME", "Laura")
+SOUL_FILE = os.getenv("SOUL_FILE", "souls/laura_equity.md")
 
-# --- Telegram ---
+# --- Telegram (bot propio de Laura) ---
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 
-# --- GoHighLevel CRM ---
+# --- Notificaciones: 2 grupos + email ---
+# Grupo nuevo de Laura (avisos de leads calificados)
+NOTIFY_CHAT_ID_LAURA = os.getenv("NOTIFY_CHAT_ID_LAURA", "")
+# Grupo de reportes diarios existente (en horario diferente)
+NOTIFY_CHAT_ID_REPORTES = os.getenv("NOTIFY_CHAT_ID_REPORTES", "")
+# Bot token para enviar notificaciones
+NOTIFY_BOT_TOKEN = os.getenv("NOTIFY_BOT_TOKEN", "")
+# Email de soporte
+NOTIFY_EMAIL = os.getenv("NOTIFY_EMAIL", "soporte@mkaddeshcorp.com")
+
+# --- GoHighLevel CRM - Subcuenta EQUITY Reclutamiento ---
 GHL_WEBHOOK_URL = os.getenv("GHL_WEBHOOK_URL", "")
 GHL_LOCATION_ID = os.getenv("GHL_LOCATION_ID", "")
+GHL_API_KEY = os.getenv("GHL_API_KEY", "")
 
-# --- Healthcare.gov API ---
-HEALTHCARE_API_URL = "https://marketplace.api.healthcare.gov"
-HEALTHCARE_API_KEY = os.getenv("HEALTHCARE_API_KEY", "XIvzGUQ5RSDAAqGFukLxcmrJ8P2zcCik")
+# --- Supabase (proyecto conectado a Lovable / programaequity.com) ---
+SUPABASE_URL = os.getenv("SUPABASE_URL", "")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
 
-# --- Google Maps API ---
-GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY", "")
-
-# --- Notificaciones al grupo ---
-NOTIFY_CHAT_ID = os.getenv("NOTIFY_CHAT_ID", "")
-NOTIFY_BOT_TOKEN = os.getenv("NOTIFY_BOT_TOKEN", "")
+# --- SendGrid / SMTP para notificaciones email ---
+SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY", "")
+EMAIL_FROM = os.getenv("EMAIL_FROM", "laura@mkaddeshcorp.com")
 
 # --- Sessions ---
 SESSIONS_DIR = os.getenv("SESSIONS_DIR", "data/sessions")
@@ -40,3 +49,21 @@ SESSIONS_DIR = os.getenv("SESSIONS_DIR", "data/sessions")
 # --- Límites ---
 MAX_CONVERSATION_TURNS = 50
 MAX_TOKENS_RESPONSE = 4096
+
+# --- Gerentes de línea EQUITY ---
+GERENTES_LINEA = [
+    "Jimmy Arenas",
+    "Isidro González",
+    "Jamie Varona",
+    "Andy Salandy",
+    "Daniel Pulido",
+]
+
+# --- Tags GHL EQUITY ---
+TAG_LEAD_EQUITY = "lead_equity"
+TAG_CON_LICENCIA = "equity_con_lic"
+TAG_SIN_LICENCIA = "equity_sin_lic"
+TAG_LIC_214 = "lic_214"
+TAG_LIC_215 = "lic_215"
+TAG_LIC_220 = "lic_220"
+TAG_LIC_240 = "lic_240"
