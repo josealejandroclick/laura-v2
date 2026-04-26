@@ -144,7 +144,7 @@ def ejecutar(
     # --- Telegram ---
     try:
         import requests
-        from config import NOTIFY_BOT_TOKEN, NOTIFY_CHAT_ID_LAURA, NOTIFY_CHAT_ID_REPORTES
+        from config import NOTIFY_BOT_TOKEN, NOTIFY_CHAT_ID_LAURA, NOTIFY_CHAT_ID_REPORTES, NOTIFY_CHAT_ID_REPORTES_2
 
         if NOTIFY_BOT_TOKEN:
             tg_base = f"https://api.telegram.org/bot{NOTIFY_BOT_TOKEN}/sendMessage"
@@ -178,6 +178,20 @@ def ejecutar(
             else:
                 telegram_resultados["grupo_reportes"] = {"status": "skip", "razon": "NOTIFY_CHAT_ID_REPORTES no configurado"}
 
+            # Grupo 3: segundo destinatario de reportes (ID 2)
+            if NOTIFY_CHAT_ID_REPORTES_2:
+                res = requests.post(tg_base, json={
+                    "chat_id": NOTIFY_CHAT_ID_REPORTES_2,
+                    "text": mensaje,
+                    "parse_mode": "Markdown"
+                }, timeout=10)
+                telegram_resultados["grupo_reportes_2"] = {
+                    "status": "ok" if res.status_code == 200 else "error",
+                    "codigo": res.status_code
+                }
+            else:
+                telegram_resultados["grupo_reportes_2"] = {"status": "skip", "razon": "NOTIFY_CHAT_ID_REPORTES_2 no configurado"}
+
             resultados["telegram"] = telegram_resultados
         else:
             resultados["telegram"] = {"status": "skip", "razon": "NOTIFY_BOT_TOKEN no configurado"}
@@ -185,49 +199,52 @@ def ejecutar(
     except Exception as e:
         resultados["telegram"] = {"status": "error", "detalle": str(e)}
 
-    # --- Email soporte@mkaddeshcorp.com ---
+    # --- Email soporte@mkaddeshcorp.com via SMTP Gmail ---
     try:
-        from config import SENDGRID_API_KEY, EMAIL_FROM, NOTIFY_EMAIL
+        import smtplib
+        from email.mime.text import MIMEText
+        from email.mime.multipart import MIMEMultipart
+        from config import EMAIL_FROM, NOTIFY_EMAIL
 
-        if SENDGRID_API_KEY:
-            import requests
+        email_password = os.getenv("EMAIL_APP_PASSWORD", "")
+
+        if email_password:
             clasificacion_texto = _texto_clasificacion(clasificacion)
             asunto = f"[EQUITY] Nuevo lead: {nombre} — {clasificacion_texto[:40]}"
-            cuerpo_html = f"""
-            <h2>🎯 Nuevo Lead EQUITY — Laura</h2>
-            <table style="border-collapse:collapse;width:100%">
-              <tr><td><b>Nombre</b></td><td>{nombre}</td></tr>
-              <tr><td><b>Teléfono</b></td><td>{telefono}</td></tr>
-              <tr><td><b>Email</b></td><td>{email or '—'}</td></tr>
-              <tr><td><b>Estado</b></td><td>{estado_usa or '—'}</td></tr>
-              <tr><td><b>Clasificación</b></td><td>{clasificacion_texto}</td></tr>
-              <tr><td><b>Tag</b></td><td><code>{tag_principal}</code></td></tr>
-              <tr><td><b>Tipo licencia</b></td><td>{tipo_licencia or '—'}</td></tr>
-              <tr><td><b>Fuente</b></td><td>{como_se_entero or '—'}</td></tr>
-              <tr><td><b>Referido por</b></td><td>{referido_por or '—'}</td></tr>
-            </table>
-            <p style="color:#888;font-size:12px">Notificación automática de Laura — Programa EQUITY</p>
-            """
 
-            sg_payload = {
-                "personalizations": [{"to": [{"email": NOTIFY_EMAIL}]}],
-                "from": {"email": EMAIL_FROM, "name": "Laura | EQUITY"},
-                "subject": asunto,
-                "content": [{"type": "text/html", "value": cuerpo_html}]
-            }
-            res = requests.post(
-                "https://api.sendgrid.com/v3/mail/send",
-                json=sg_payload,
-                headers={"Authorization": f"Bearer {SENDGRID_API_KEY}"},
-                timeout=10
-            )
+            lineas_cuerpo = [
+                f"NUEVO LEAD EQUITY — LAURA",
+                f"",
+                f"Nombre: {nombre}",
+                f"Teléfono: {telefono}",
+                f"Email: {email or '—'}",
+                f"Estado: {estado_usa or '—'}",
+                f"Clasificación: {clasificacion_texto}",
+                f"Tag: {tag_principal}",
+                f"Tipo licencia: {tipo_licencia or '—'}",
+                f"Fuente: {como_se_entero or '—'}",
+                f"Referido por: {referido_por or '—'}",
+                f"",
+                f"Notificación automática de Laura — Programa EQUITY",
+            ]
+            cuerpo = "\n".join(lineas_cuerpo)
+
+            msg = MIMEMultipart()
+            msg["From"] = EMAIL_FROM
+            msg["To"] = NOTIFY_EMAIL
+            msg["Subject"] = asunto
+            msg.attach(MIMEText(cuerpo, "plain", "utf-8"))
+
+            with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+                server.login(EMAIL_FROM, email_password)
+                server.sendmail(EMAIL_FROM, NOTIFY_EMAIL, msg.as_string())
+
             resultados["email"] = {
-                "status": "ok" if res.status_code in (200, 202) else "error",
-                "codigo": res.status_code,
+                "status": "ok",
                 "destinatario": NOTIFY_EMAIL
             }
         else:
-            resultados["email"] = {"status": "skip", "razon": "SENDGRID_API_KEY no configurado"}
+            resultados["email"] = {"status": "skip", "razon": "EMAIL_APP_PASSWORD no configurado"}
 
     except Exception as e:
         resultados["email"] = {"status": "error", "detalle": str(e)}

@@ -1,9 +1,9 @@
 """
 Tool: consultar_conocimiento
-Carga la base de conocimiento de Sara y devuelve la sección relevante
-para responder una pregunta específica del cliente.
+Carga la base de conocimiento de Laura y devuelve la sección relevante
+para responder una pregunta específica del candidato.
 
-La base de conocimiento está en knowledge/sara_knowledge.md
+La base de conocimiento está en knowledge/laura_knowledge.md
 Para actualizarla: editar ese archivo y hacer redeploy.
 """
 
@@ -15,12 +15,12 @@ from pathlib import Path
 TOOL_SCHEMA = {
     "name": "consultar_conocimiento",
     "description": (
-        "Consulta la base de conocimiento interna de MKAddesh para obtener "
-        "información correcta sobre: elegibilidad de productos, coberturas, "
-        "restricciones, condiciones preexistentes, embarazo, estatus migratorio, "
-        "metodología de venta, objeciones, o cualquier detalle de negocio. "
-        "Usar SIEMPRE antes de responder preguntas sobre productos, elegibilidad "
-        "o situaciones especiales del cliente."
+        "Consulta la base de conocimiento interna del Programa EQUITY de MKAddesh para obtener "
+        "información correcta sobre: tipos de licencia, proceso de calificación, "
+        "Escuela de Licenciamiento, beneficios del programa, Washington National, "
+        "gerentes de línea, objeciones frecuentes, o cualquier detalle del programa. "
+        "Usar SIEMPRE antes de responder preguntas sobre el programa, licencias "
+        "o situaciones especiales del candidato."
     ),
     "input_schema": {
         "type": "object",
@@ -29,33 +29,35 @@ TOOL_SCHEMA = {
                 "type": "string",
                 "description": (
                     "La pregunta o tema a consultar. Ser específico. "
-                    "Ejemplos: 'embarazo y cobertura suplementaria', "
-                    "'elegibilidad sin documentos', 'qué cubre el plan medium', "
-                    "'condiciones preexistentes período de espera'"
+                    "Ejemplos: 'qué licencias califican para EQUITY', "
+                    "'cómo funciona la escuela de licenciamiento', "
+                    "'qué incluye el programa para agentes', "
+                    "'cuándo es el overview', 'quiénes son los gerentes de línea'"
                 )
             },
             "seccion": {
                 "type": "string",
                 "enum": [
-                    "productos",
-                    "elegibilidad",
-                    "metodologia",
-                    "psicologia",
+                    "programa",
+                    "licencias",
+                    "escuela",
+                    "flujo",
+                    "gerentes",
                     "objeciones",
-                    "lenguaje",
                     "prohibiciones",
-                    "logistica",
+                    "contacto",
                     "todo"
                 ],
                 "description": (
                     "Sección específica a consultar. Usar 'todo' si no estás seguro. "
-                    "productos=coberturas y beneficios, "
-                    "elegibilidad=quién califica, restricciones, preexistencias, embarazo, "
-                    "metodologia=secuencia de venta, cierre, calificación, "
-                    "psicologia=perfil del cliente hispano, "
-                    "objeciones=respuestas a objeciones, "
-                    "lenguaje=términos correctos y analogías, "
-                    "prohibiciones=qué nunca decir ni hacer"
+                    "programa=qué es EQUITY y sus beneficios, "
+                    "licencias=tipos de licencia y calificación, "
+                    "escuela=proceso de licenciamiento, "
+                    "flujo=registro y calificación de candidatos, "
+                    "gerentes=líneas de negocio y gerentes, "
+                    "objeciones=respuestas a objeciones frecuentes, "
+                    "prohibiciones=qué nunca decir ni hacer, "
+                    "contacto=información de contacto y recursos"
                 )
             }
         },
@@ -64,27 +66,26 @@ TOOL_SCHEMA = {
 }
 
 
-# Mapeo de secciones a encabezados en el documento
+# Mapeo de secciones a encabezados en el documento de Laura
 SECTION_MAP = {
-    "productos":     "## SECCIÓN 1",
-    "elegibilidad":  "## SECCIÓN 2",
-    "metodologia":   "## SECCIÓN 3",
-    "psicologia":    "## SECCIÓN 4",
-    "objeciones":    "## SECCIÓN 5",
-    "lenguaje":      "## SECCIÓN 6",
-    "prohibiciones": "## SECCIÓN 7",
-    "logistica":     "## SECCIÓN 8",
-    "todo":          None
+    "programa":     "## SECCIÓN 1",
+    "licencias":    "## SECCIÓN 2",
+    "escuela":      "## SECCIÓN 3",
+    "flujo":        "## SECCIÓN 4",
+    "gerentes":     "## SECCIÓN 5",
+    "objeciones":   "## SECCIÓN 6",
+    "prohibiciones":"## SECCIÓN 7",
+    "contacto":     "## SECCIÓN 8",
+    "todo":         None
 }
 
 
 def _cargar_knowledge() -> str:
-    """Carga el archivo de conocimiento."""
-    # Buscar el archivo en rutas posibles
+    """Carga el archivo de conocimiento de Laura."""
     rutas = [
-        Path(__file__).parent.parent / "knowledge" / "sara_knowledge.md",
-        Path("/app/knowledge/sara_knowledge.md"),
-        Path("knowledge/sara_knowledge.md"),
+        Path(__file__).parent.parent / "knowledge" / "laura_knowledge.md",
+        Path("/app/knowledge/laura_knowledge.md"),
+        Path("knowledge/laura_knowledge.md"),
     ]
     for ruta in rutas:
         if ruta.exists():
@@ -152,7 +153,7 @@ def _buscar_relevante(contenido: str, pregunta: str) -> str:
 
 def ejecutar(pregunta: str, seccion: str = "todo") -> str:
     """
-    Consulta la base de conocimiento y devuelve información relevante.
+    Consulta la base de conocimiento de Laura y devuelve información relevante.
     """
     contenido = _cargar_knowledge()
 
@@ -160,7 +161,7 @@ def ejecutar(pregunta: str, seccion: str = "todo") -> str:
         return json.dumps({
             "exito": False,
             "error": "Base de conocimiento no disponible",
-            "respuesta": "Información no disponible en este momento. Escalar al asesor."
+            "respuesta": "Información no disponible en este momento. Escalar al equipo."
         }, ensure_ascii=False)
 
     # Extraer sección específica si se indicó

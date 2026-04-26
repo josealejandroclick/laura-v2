@@ -71,14 +71,14 @@ TOOL_SCHEMA = {
                 "default": "whatsapp_laura"
             }
         },
-        "required": ["first_name", "phone", "tag_principal"]
+        "required": ["first_name", "tag_principal"]
     }
 }
 
 
 def ejecutar(
     first_name: str,
-    phone: str,
+    phone: str = "",
     tag_principal: str,
     last_name: str = "",
     email: str = "",
