@@ -162,7 +162,7 @@ def _guardar_supabase(session_id: str, role: str, content) -> None:
             "mensajes": mensajes,
             "ultimo_mensaje_en": _now_iso(),
             "actualizado_en": _now_iso()
-        }).execute()
+        }, on_conflict="session_id").execute()
 
     except Exception as e:
         print(f"[SESSIONS] Error guardando Supabase: {e}")
@@ -218,7 +218,7 @@ def actualizar_lead(session_id: str, **campos) -> None:
         sb.table(SUPABASE_TABLE).upsert({
             "session_id": session_id,
             **campos
-        }).execute()
+        }, on_conflict="session_id").execute()
     except Exception as e:
         print(f"[SESSIONS] Error actualizando lead: {e}")
 
@@ -321,7 +321,7 @@ def comprimir_sesion(session_id: str, client, model: str, system_prompt: str) ->
                     "session_id": session_id,
                     "mensajes": mensajes_nuevos,
                     "actualizado_en": _now_iso()
-                }).execute()
+                }, on_conflict="session_id").execute()
         except Exception as e:
             print(f"[SESSIONS] Error comprimiendo en Supabase: {e}")
     else:
