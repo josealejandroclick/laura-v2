@@ -286,9 +286,9 @@ def comprimir_sesion(session_id: str, client, model: str, system_prompt: str) ->
             max_tokens=1024,
             system=(
                 "Eres un asistente que resume conversaciones. "
-                "Resume la siguiente conversación entre un asistente de seguros y un prospecto. "
-                "Incluye: nombre del prospecto, datos que dio (ZIP, edades, ingreso), "
-                "planes cotizados, nivel de interés, y cualquier detalle importante. "
+                "Resume la siguiente conversación entre Laura, asistente de reclutamiento del Programa EQUITY de MKAddesh, y un candidato. "
+                "Incluye: nombre del candidato, estado donde vive, cómo se enteró, "
+                "si tiene licencia y de qué tipo, etapa de calificación alcanzada, y cualquier detalle importante. "
                 "Sé conciso pero no pierdas datos clave."
             ),
             messages=[{"role": "user", "content": f"Resume esta conversación:\n\n{texto_para_resumir}"}]

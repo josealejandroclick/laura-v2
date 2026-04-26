@@ -25,6 +25,8 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 NOTIFY_CHAT_ID_LAURA = os.getenv("NOTIFY_CHAT_ID_LAURA", "")
 # Grupo de reportes diarios existente (en horario diferente)
 NOTIFY_CHAT_ID_REPORTES = os.getenv("NOTIFY_CHAT_ID_REPORTES", "")
+# Segundo destinatario de reportes
+NOTIFY_CHAT_ID_REPORTES_2 = os.getenv("NOTIFY_CHAT_ID_REPORTES_2", "")
 # Bot token para enviar notificaciones
 NOTIFY_BOT_TOKEN = os.getenv("NOTIFY_BOT_TOKEN", "")
 # Email de soporte
@@ -39,9 +41,10 @@ GHL_API_KEY = os.getenv("GHL_API_KEY", "")
 SUPABASE_URL = os.getenv("SUPABASE_URL", "")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
 
-# --- SendGrid / SMTP para notificaciones email ---
-SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY", "")
-EMAIL_FROM = os.getenv("EMAIL_FROM", "laura@mkaddeshcorp.com")
+# --- Email SMTP Gmail ---
+EMAIL_FROM = os.getenv("EMAIL_FROM", "mkaddeshholding@gmail.com")
+# EMAIL_APP_PASSWORD: contraseña de aplicación de Gmail (16 caracteres)
+# Generarla en: Google Account > Security > App passwords
 
 # --- Sessions ---
 SESSIONS_DIR = os.getenv("SESSIONS_DIR", "data/sessions")
