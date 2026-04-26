@@ -24,7 +24,7 @@ KEEP_RECENT = 16
 
 SUPABASE_URL = os.getenv("SUPABASE_URL", "")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
-SUPABASE_TABLE = "sara_v2_sesiones"
+SUPABASE_TABLE = "conversaciones_laura"
 
 _supabase_client = None
 
