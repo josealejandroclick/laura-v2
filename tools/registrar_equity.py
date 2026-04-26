@@ -78,8 +78,8 @@ TOOL_SCHEMA = {
 
 def ejecutar(
     first_name: str,
-    phone: str = "",
     tag_principal: str,
+    phone: str = "",
     last_name: str = "",
     email: str = "",
     estado_usa: str = "",
