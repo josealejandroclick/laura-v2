@@ -1,5 +1,6 @@
 """
-Sara — Canal Telegram + Heartbeat
+Laura — Canal Telegram + Heartbeat
+Bot de reclutamiento EQUITY - MKAddesh
 """
 
 import asyncio
@@ -26,7 +27,7 @@ from config import (
     MODEL_ID, SOUL_FILE, AGENT_NAME
 )
 from sessions import obtener_info_sesion, eliminar_sesion
-from sam_core import crear_agente, procesar_mensaje
+from laura_core import crear_agente, procesar_mensaje
 from heartbeat import (
     Heartbeat,
     generar_mensaje_followup,
@@ -37,7 +38,7 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO
 )
-logger = logging.getLogger("sara_telegram")
+logger = logging.getLogger("laura_telegram")
 
 
 # ============================================================
@@ -56,72 +57,25 @@ def limpiar_markdown(texto: str) -> str:
 
 
 def dividir_en_mensajes(texto: str) -> list:
-    """
-    Divide la respuesta en mensajes separados.
-    - Si hay planes: cada plan en su propio mensaje, pregunta final aparte
-    - Si no hay planes: divide por párrafos dobles
-    """
-    MARCADORES = ['Plan Básico 🏥', 'Medium Cover 🛡', 'Full Cover 💎']
-    PREGUNTA = '¿Cuál te llama más la atención?'
-    tiene_planes = sum(1 for m in MARCADORES if m in texto)
-
-    if tiene_planes >= 2:
-        lineas = texto.split('\n')
-        intro_lineas = []
-        bloques = []
-        buffer = []
-        en_planes = False
-
-        for linea in lineas:
-            strip = linea.strip()
-            es_marcador = any(strip.startswith(m) for m in MARCADORES)
-
-            if es_marcador:
-                if buffer and en_planes:
-                    bloques.append(' '.join(b for b in buffer if b and b != PREGUNTA))
-                    buffer = []
-                en_planes = True
-                buffer.append(strip)
-            elif en_planes:
-                if strip and strip != PREGUNTA:
-                    buffer.append(strip)
-            else:
-                if strip:
-                    intro_lineas.append(strip)
-
-        if buffer:
-            bloques.append(' '.join(b for b in buffer if b and b != PREGUNTA))
-
-        resultado = []
-        if intro_lineas:
-            resultado.append(' '.join(intro_lineas))
-        resultado.extend([b for b in bloques if b.strip()])
-        resultado.append(PREGUNTA)
-
-        return [m for m in resultado if m.strip()]
-
-    # Sin planes — dividir por párrafos dobles
+    """Divide la respuesta en mensajes separados por párrafos dobles."""
     if '\n\n' in texto:
         partes = [p.strip() for p in texto.split('\n\n') if p.strip()]
         if len(partes) > 1:
             return partes
-
     return [texto]
 
 
-
 # ============================================================
-# SALUDOS Y HANDLERS
+# HANDLERS
 # ============================================================
 
 _bot = None
 _loop = None
 
 SALUDOS_INICIO = [
-    "Hola, soy Sara de Mkaddesh 👋 ¿Tienes seguro médico o estás buscando opciones?",
-    "Hola 👋 soy Sara de Mkaddesh. ¿Ya tienes cobertura médica o estás buscando?",
-    "Hola, soy Sara de Mkaddesh. ¿Tienes seguro ahorita o estás sin cobertura?",
-    "Hola 👋 Sara de Mkaddesh por aquí. ¿Tienes seguro médico o estás buscando uno?",
+    "Hola, soy Laura del Programa EQUITY 👋 ¿Estás interesado en unirte como agente de seguros?",
+    "Hola 👋 soy Laura de MKAddesh. ¿Te interesa conocer el Programa EQUITY para agentes?",
+    "Hola, soy Laura del Programa EQUITY de MKAddesh. ¿Buscas una oportunidad en el mundo de los seguros?",
 ]
 
 
@@ -129,13 +83,16 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = str(update.effective_chat.id)
     eliminar_sesion(chat_id)
     registrar_actividad(chat_id)
-    logger.info(f"Sesión reiniciada: {update.effective_user.first_name} (chat_id: {chat_id})")
+    saludo = random.choice(SALUDOS_INICIO)
+    await update.message.reply_text(saludo)
+    logger.info(f"Sesión iniciada: {update.effective_user.first_name} (chat_id: {chat_id})")
 
 
 async def cmd_nueva(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = str(update.effective_chat.id)
     eliminar_sesion(chat_id)
     registrar_actividad(chat_id)
+    await update.message.reply_text("Conversación reiniciada. ¿En qué puedo ayudarte?")
 
 
 async def cmd_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -164,18 +121,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         respuesta_limpia = limpiar_markdown(respuesta)
         mensajes = dividir_en_mensajes(respuesta_limpia)
 
-        for i, msg in enumerate(mensajes):
+        for msg in mensajes:
             if not msg.strip():
                 continue
-            # Delay proporcional al largo del mensaje que se va a enviar
-            # Aplica a TODOS los mensajes incluyendo los siguientes
             chars = len(msg)
             delay_escritura = min(4.0, max(1.5, chars / 50))
             await update.effective_chat.send_action(ChatAction.TYPING)
             await asyncio.sleep(delay_escritura)
             await update.message.reply_text(msg)
 
-        logger.info(f"[{chat_id}] Sara respondió ({len(mensajes)} msgs)")
+        logger.info(f"[{chat_id}] Laura respondió ({len(mensajes)} msgs)")
 
     except Exception as e:
         logger.error(f"[{chat_id}] Error: {e}", exc_info=True)
@@ -196,7 +151,7 @@ def _enviar_async(chat_id: str, texto: str):
 
 def on_followup(session_id: str, followup_num: int):
     mensaje = generar_mensaje_followup(followup_num, AGENT_NAME)
-    logger.info(f"💓 Follow-up #{followup_num} a {session_id}")
+    logger.info(f"Follow-up #{followup_num} a {session_id}")
     _enviar_async(session_id, mensaje)
 
 
@@ -205,10 +160,10 @@ def on_cron(tarea: dict):
     tipo = tarea.get("tipo", "")
     descripcion = tarea.get("descripcion", "")
 
-    logger.info(f"⏰ Cron: {tipo} - {descripcion}")
+    logger.info(f"Cron: {tipo} - {descripcion}")
 
     if tipo == "recordatorio" and session_id:
-        _enviar_async(session_id, "Oye, quería saber si tienes alguna duda sobre lo que hablamos. Aquí estoy 😊")
+        _enviar_async(session_id, "Oye, quería saber si tienes alguna duda sobre el Programa EQUITY. Aquí estoy 😊")
 
     elif tipo == "followup" and session_id:
         try:
@@ -222,9 +177,9 @@ def on_cron(tarea: dict):
             logger.error(f"Error en cron followup: {e}")
 
     elif tipo == "notificacion":
-        from config import NOTIFY_CHAT_ID
-        if NOTIFY_CHAT_ID:
-            _enviar_async(NOTIFY_CHAT_ID, f"📋 {descripcion}")
+        from config import NOTIFY_CHAT_ID_LAURA
+        if NOTIFY_CHAT_ID_LAURA:
+            _enviar_async(NOTIFY_CHAT_ID_LAURA, f"📋 {descripcion}")
 
 
 # ============================================================
@@ -244,6 +199,7 @@ def main():
     print(f"""
 ╔══════════════════════════════════════════╗
 ║  {AGENT_NAME} — Telegram + Heartbeat
+║  Programa EQUITY — MKAddesh
 ║  Soul: {SOUL_FILE}
 ║  Modelo: {MODEL_ID}
 ║  Heartbeat: activo
@@ -265,7 +221,7 @@ def main():
         global _loop
         _loop = asyncio.get_event_loop()
         heartbeat.iniciar()
-        logger.info("💓 Heartbeat iniciado")
+        logger.info("Heartbeat iniciado")
 
     app.post_init = post_init
 
