@@ -1,17 +1,19 @@
 """
-SAM -- Heartbeat + Cron (Agente Proactivo)
+LAURA -- Heartbeat + Cron (Agente Proactivo)
+Bot de reclutamiento EQUITY - MKAddesh
 
 Follow-up con intervalos variables:
-  #1 -> 30 minutos
-  #2 -> 2 horas
-  #3 -> 24 horas
-  #4 -> 48 horas
+#1 -> 30 minutos
+#2 -> 2 horas
+#3 -> 24 horas
+#4 -> 48 horas
 
-Follow-ups de WhatsApp se envian via GHL automaticamente.
+Follow-ups de WhatsApp se envían via GHL automáticamente.
 Antes de cada follow-up verifica tags del contacto:
-- humano_activo -> detener seguimiento
-- p_cliente_cerrado / cliente_dental -> detener seguimiento
-- p_cita_agendada -> no vender, solo recordatorio 30 min antes de la cita
+- humano_activo       -> detener seguimiento
+- contratado          -> detener seguimiento
+- equity_con_lic      -> no detener, pero no vender — ya calificado
+- estudiante_lic      -> no detener, está en proceso de escuela
 """
 
 import json
@@ -24,14 +26,13 @@ from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Callable, Optional
 
-logger = logging.getLogger("sam_heartbeat")
+logger = logging.getLogger("laura_heartbeat")
 
 # ============================================================
 # CONFIGURACION
 # ============================================================
 
 HEARTBEAT_INTERVAL = int(os.getenv("HEARTBEAT_INTERVAL", "300"))  # 5 min
-
 _FOLLOWUP_INTERVALS_RAW = os.getenv("FOLLOWUP_INTERVALS", "30,120,1440,2880")
 FOLLOWUP_INTERVALS = [int(x) for x in _FOLLOWUP_INTERVALS_RAW.split(",")]
 MAX_FOLLOWUPS = len(FOLLOWUP_INTERVALS)
@@ -45,12 +46,12 @@ GHL_LOCATION_ID = os.getenv("GHL_LOCATION_ID", "")
 GHL_BASE_URL = "https://services.leadconnectorhq.com"
 
 # Tags que detienen el seguimiento completamente
-TAGS_DETENER = {"humano_activo", "p_cliente_cerrado", "cliente_dental"}
+TAGS_DETENER = {"humano_activo", "contratado"}
 
-# Tag que cambia el seguimiento a recordatorio de cita
-TAG_CITA_AGENDADA = "p_cita_agendada"
+# Tags que indican que el candidato está en proceso activo (no detener pero no presionar)
+TAGS_EN_PROCESO = {"equity_con_lic", "estudiante_lic"}
 
-# Control para recordatorios ya enviados (evitar duplicados)
+# Control para recordatorios ya enviados
 _recordatorios_enviados = set()
 
 
@@ -120,18 +121,18 @@ def marcar_followup_enviado(session_id: str):
         tracker[session_id]["ultimo_followup"] = time.time()
         if enviados >= MAX_FOLLOWUPS:
             tracker[session_id]["activo"] = False
-        _guardar_tracker(tracker)
+    _guardar_tracker(tracker)
 
 
 def desactivar_sesion(session_id: str):
     tracker = _cargar_tracker()
     if session_id in tracker:
         tracker[session_id]["activo"] = False
-        _guardar_tracker(tracker)
+    _guardar_tracker(tracker)
 
 
 # ============================================================
-# GHL — VERIFICACION DE TAGS Y CITAS
+# GHL — VERIFICACION DE TAGS
 # ============================================================
 
 def _extraer_telefono_whatsapp(session_id: str) -> str:
@@ -141,15 +142,10 @@ def _extraer_telefono_whatsapp(session_id: str) -> str:
 
 
 def _buscar_datos_contacto_ghl(telefono: str) -> dict:
-    """
-    Busca contacto en GHL y retorna:
-    { contacto_id, conversation_id, tags, proxima_cita_iso }
-    """
     resultado = {
         "contacto_id": "",
         "conversation_id": "",
         "tags": [],
-        "proxima_cita_iso": ""
     }
 
     if not GHL_API_KEY or not GHL_LOCATION_ID or not telefono:
@@ -165,7 +161,6 @@ def _buscar_datos_contacto_ghl(telefono: str) -> dict:
     }
 
     try:
-        # Buscar contacto
         r = httpx.get(
             f"{GHL_BASE_URL}/contacts/",
             headers=headers,
@@ -174,47 +169,23 @@ def _buscar_datos_contacto_ghl(telefono: str) -> dict:
         )
         if r.status_code == 200:
             contactos = r.json().get("contacts", [])
-            if not contactos:
-                return resultado
+            if contactos:
+                contacto = contactos[0]
+                contacto_id = contacto.get("id", "")
+                resultado["contacto_id"] = contacto_id
+                resultado["tags"] = contacto.get("tags", [])
 
-            contacto = contactos[0]
-            contacto_id = contacto.get("id", "")
-            resultado["contacto_id"] = contacto_id
-            resultado["tags"] = contacto.get("tags", [])
-
-            # Buscar conversacion
-            if contacto_id:
-                conv_r = httpx.get(
-                    f"{GHL_BASE_URL}/conversations/search",
-                    headers=headers,
-                    params={"locationId": GHL_LOCATION_ID, "contactId": contacto_id},
-                    timeout=8
-                )
-                if conv_r.status_code == 200:
-                    convs = conv_r.json().get("conversations", [])
-                    if convs:
-                        resultado["conversation_id"] = convs[0].get("id", "")
-
-                # Buscar proxima cita si tiene tag p_cita_agendada
-                if TAG_CITA_AGENDADA in resultado["tags"]:
-                    apt_r = httpx.get(
-                        f"{GHL_BASE_URL}/contacts/{contacto_id}/appointments",
+                if contacto_id:
+                    conv_r = httpx.get(
+                        f"{GHL_BASE_URL}/conversations/search",
                         headers=headers,
+                        params={"locationId": GHL_LOCATION_ID, "contactId": contacto_id},
                         timeout=8
                     )
-                    if apt_r.status_code == 200:
-                        events = apt_r.json().get("events", [])
-                        ahora_iso = datetime.utcnow().isoformat()
-                        # Buscar cita futura mas proxima
-                        futuras = [
-                            e for e in events
-                            if e.get("startTime", "") > ahora_iso
-                            and e.get("appointmentStatus") == "confirmed"
-                            and not e.get("deleted", False)
-                        ]
-                        if futuras:
-                            futuras.sort(key=lambda x: x.get("startTime", ""))
-                            resultado["proxima_cita_iso"] = futuras[0].get("startTime", "")
+                    if conv_r.status_code == 200:
+                        convs = conv_r.json().get("conversations", [])
+                        if convs:
+                            resultado["conversation_id"] = convs[0].get("id", "")
 
     except Exception as e:
         logger.warning(f"[FOLLOWUP-GHL] Error buscando datos de {telefono_query}: {e}")
@@ -222,28 +193,8 @@ def _buscar_datos_contacto_ghl(telefono: str) -> dict:
     return resultado
 
 
-def _debe_enviar_recordatorio_cita(cita_iso: str, session_id: str) -> bool:
-    """
-    Verifica si faltan entre 25 y 35 minutos para la cita.
-    Evita enviar el recordatorio mas de una vez.
-    """
-    if not cita_iso or session_id in _recordatorios_enviados:
-        return False
-
-    try:
-        # GHL devuelve UTC sin timezone
-        cita_dt = datetime.fromisoformat(cita_iso.replace(" ", "T"))
-        ahora_utc = datetime.utcnow()
-        diff_minutos = (cita_dt - ahora_utc).total_seconds() / 60
-
-        return 25 <= diff_minutos <= 35
-    except Exception as e:
-        logger.warning(f"[FOLLOWUP] Error calculando tiempo cita: {e}")
-        return False
-
-
 def _enviar_mensaje_ghl(conversation_id: str, contacto_id: str, mensaje: str) -> bool:
-    """Envia un mensaje WhatsApp via GHL."""
+    """Envía un mensaje WhatsApp via GHL."""
     if not GHL_API_KEY or not conversation_id or not contacto_id:
         return False
 
@@ -267,17 +218,17 @@ def _enviar_mensaje_ghl(conversation_id: str, contacto_id: str, mensaje: str) ->
         )
         return r.status_code in (200, 201)
     except Exception as e:
-        logger.error(f"[FOLLOWUP-GHL] Excepcion enviando mensaje: {e}")
+        logger.error(f"[FOLLOWUP-GHL] Excepción enviando mensaje: {e}")
         return False
 
 
 def _procesar_followup_whatsapp(session_id: str, followup_num: int) -> bool:
     """
-    Procesa un follow-up de WhatsApp con logica inteligente:
+    Procesa un follow-up de WhatsApp para candidatos EQUITY.
     1. Verifica tags del contacto
-    2. Si tiene tag de detener -> desactiva sesion
-    3. Si tiene cita agendada -> envia recordatorio si toca
-    4. Si no tiene cita -> envia follow-up de ventas normal
+    2. Si tiene tag de detener → desactiva sesión
+    3. Si está en proceso activo → no presionar, solo recordatorio suave
+    4. Si no tiene tags especiales → envía follow-up de reclutamiento normal
     """
     telefono = _extraer_telefono_whatsapp(session_id)
     if not telefono:
@@ -287,44 +238,15 @@ def _procesar_followup_whatsapp(session_id: str, followup_num: int) -> bool:
     contacto_id = datos.get("contacto_id", "")
     conversation_id = datos.get("conversation_id", "")
     tags = set(datos.get("tags", []))
-    proxima_cita = datos.get("proxima_cita_iso", "")
 
-    # Verificar tags que detienen el seguimiento
+    # Tags que detienen el seguimiento
     if tags & TAGS_DETENER:
         logger.info(f"[FOLLOWUP] {session_id} tiene tag de detener ({tags & TAGS_DETENER}) — desactivando")
         desactivar_sesion(session_id)
-        return True  # No es un error, es intencional
+        return True
 
-    # Verificar si tiene cita agendada
-    if TAG_CITA_AGENDADA in tags:
-        if proxima_cita and _debe_enviar_recordatorio_cita(proxima_cita, session_id):
-            mensaje = (
-                "Hola! Te recordamos que en unos minutos te contacta nuestro asesor. "
-                "Queda atenta a la llamada 😊"
-            )
-            if contacto_id and conversation_id:
-                enviado = _enviar_mensaje_ghl(conversation_id, contacto_id, mensaje)
-                if enviado:
-                    _recordatorios_enviados.add(session_id)
-                    desactivar_sesion(session_id)
-                    logger.info(f"[FOLLOWUP] Recordatorio de cita enviado a {telefono}")
-                    return True
-        else:
-            # Tiene cita pero no es momento del recordatorio — no hacer nada
-            logger.info(f"[FOLLOWUP] {session_id} tiene cita agendada — sin follow-up de ventas")
-            # Si la cita ya paso, desactivar
-            if proxima_cita:
-                try:
-                    cita_dt = datetime.fromisoformat(proxima_cita.replace(" ", "T"))
-                    if datetime.utcnow() > cita_dt + timedelta(hours=1):
-                        desactivar_sesion(session_id)
-                except Exception:
-                    pass
-        return True  # No enviar follow-up de ventas
-
-    # Sin tags especiales — enviar follow-up de ventas normal
     if not contacto_id or not conversation_id:
-        logger.warning(f"[FOLLOWUP-GHL] No se encontro contacto/conversacion para {telefono}")
+        logger.warning(f"[FOLLOWUP-GHL] No se encontró contacto/conversación para {telefono}")
         return False
 
     mensaje = generar_mensaje_followup(followup_num)
@@ -395,7 +317,7 @@ TOOL_SCHEMA = {
     "name": "agendar_tarea",
     "description": (
         "Programa una tarea futura: recordatorio de llamada, follow-up, "
-        "o cualquier accion que deba ejecutarse en una fecha/hora especifica."
+        "o cualquier acción que deba ejecutarse en una fecha/hora específica."
     ),
     "input_schema": {
         "type": "object",
@@ -411,7 +333,7 @@ TOOL_SCHEMA = {
             },
             "descripcion": {
                 "type": "string",
-                "description": "Que hacer cuando llegue la hora"
+                "description": "Qué hacer cuando llegue la hora"
             }
         },
         "required": ["ejecutar_en", "tipo", "descripcion"]
@@ -433,7 +355,6 @@ def ejecutar_agendar(ejecutar_en: str, tipo: str, descripcion: str, **kwargs) ->
 # ============================================================
 
 class Heartbeat:
-
     def __init__(self, on_followup: Callable = None, on_cron: Callable = None):
         self.on_followup = on_followup
         self.on_cron = on_cron
@@ -453,7 +374,7 @@ class Heartbeat:
         self._running = False
         if self._timer:
             self._timer.cancel()
-        logger.info(f"Heartbeat detenido despues de {self.ciclos} ciclos.")
+        logger.info(f"Heartbeat detenido después de {self.ciclos} ciclos.")
 
     def _programar_siguiente(self):
         if self._running:
@@ -468,7 +389,6 @@ class Heartbeat:
             leads = obtener_leads_para_followup()
             for session_id, followup_num, canal in leads:
                 logger.info(f"Follow-up #{followup_num} para {session_id} [{canal}]")
-
                 if canal == "whatsapp":
                     try:
                         enviado = _procesar_followup_whatsapp(session_id, followup_num)
@@ -478,7 +398,6 @@ class Heartbeat:
                             logger.warning(f"[FOLLOWUP] No se pudo enviar a {session_id}")
                     except Exception as e:
                         logger.error(f"Error en follow-up WhatsApp {session_id}: {e}")
-
                 elif canal == "telegram":
                     if self.on_followup:
                         try:
@@ -498,7 +417,7 @@ class Heartbeat:
                     except Exception as e:
                         logger.error(f"Error en cron {tarea['id']}: {e}")
 
-            # Reportes automaticos
+            # Reportes automáticos
             try:
                 from reports.daily_report import verificar_y_ejecutar
                 verificar_y_ejecutar()
@@ -522,36 +441,42 @@ class Heartbeat:
 
 
 # ============================================================
-# MENSAJES DE FOLLOW-UP
+# MENSAJES DE FOLLOW-UP — RECLUTAMIENTO EQUITY
 # ============================================================
 
 FOLLOWUP_TEMPLATES = [
     # Follow-up #1 (30 min)
     (
-        "Hola, solo queria asegurarme de que recibiste la informacion. "
-        "Te quedo alguna duda sobre las opciones que vimos? Aqui estoy."
+        "Hola, solo quería asegurarme de que te llegó la información del Programa EQUITY. "
+        "¿Te quedó alguna duda sobre lo que hablamos? Aquí estoy."
     ),
+
     # Follow-up #2 (2 horas)
     (
-        "Hola de nuevo. Se que estas evaluando tus opciones y queria recordarte "
-        "que puedo conectarte con un asesor hoy mismo, sin compromiso. "
-        "Quieres que te llamen?"
+        "Hola de nuevo. Sé que estás evaluando tus opciones. "
+        "Si quieres, puedo hacer que alguien del equipo de MKAddesh te llame "
+        "para resolver tus dudas de forma personalizada, sin compromiso. "
+        "¿Te parece bien?"
     ),
+
     # Follow-up #3 (24 horas)
     (
-        "Hola, {agent_name} por aqui. Solo queria saber si tienes alguna pregunta "
-        "sobre los planes que revisamos. Si quieres hablar con un asesor, "
-        "dime y lo agendo para ti."
+        "Hola, {agent_name} por aquí. Quería saber si tienes alguna pregunta "
+        "sobre el Programa EQUITY. "
+        "Tengo disponible conectarte con un asesor del equipo hoy mismo — "
+        "solo dime si te interesa y lo coordino."
     ),
+
     # Follow-up #4 (48 horas)
     (
-        "Hola, este es mi ultimo mensaje por ahora. Si en algun momento "
-        "necesitas ayuda con tu cobertura de salud, aqui estare. "
-        "Que tengas un excelente dia!"
+        "Hola, este es mi último mensaje por ahora. "
+        "Si en algún momento quieres que alguien del equipo te explique el Programa EQUITY "
+        "en detalle, escríbeme y lo coordino de inmediato. "
+        "¡Que tengas un excelente día!"
     ),
 ]
 
 
-def generar_mensaje_followup(followup_num: int, agent_name: str = "Sara") -> str:
+def generar_mensaje_followup(followup_num: int, agent_name: str = "Laura") -> str:
     idx = min(followup_num - 1, len(FOLLOWUP_TEMPLATES) - 1)
     return FOLLOWUP_TEMPLATES[idx].format(agent_name=agent_name)
