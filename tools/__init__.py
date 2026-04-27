@@ -1,1 +1,1 @@
-from tools import calificar_lead, registrar_equity, notificar_equipo, consultar_conocimiento
+from tools import calificar_lead, registrar_equity, notificar_equipo, consultar_conocimiento, verificar_zip
