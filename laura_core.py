@@ -80,7 +80,7 @@ from sessions import (
     cargar_sesion, guardar_mensaje,
     necesita_compresion, comprimir_sesion
 )
-from tools import calificar_lead, registrar_equity, notificar_equipo, consultar_conocimiento
+from tools import calificar_lead, registrar_equity, notificar_equipo, consultar_conocimiento, verificar_zip
 from heartbeat import (
     registrar_actividad,
     TOOL_SCHEMA as AGENDAR_SCHEMA,
@@ -96,6 +96,7 @@ TOOL_SCHEMAS = [
     registrar_equity.TOOL_SCHEMA,
     notificar_equipo.TOOL_SCHEMA,
     consultar_conocimiento.TOOL_SCHEMA,
+    verificar_zip.TOOL_SCHEMA,
     AGENDAR_SCHEMA,
 ]
 
@@ -104,6 +105,7 @@ TOOL_HANDLERS = {
     "registrar_equity":      registrar_equity.ejecutar,
     "notificar_equipo":      notificar_equipo.ejecutar,
     "consultar_conocimiento": consultar_conocimiento.ejecutar,
+    "verificar_zip":         verificar_zip.ejecutar,
     "agendar_tarea":         ejecutar_agendar,
 }
 
