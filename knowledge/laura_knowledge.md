@@ -13,7 +13,7 @@
 
 ### Descripción general
 
-El Programa EQUITY es el sistema de desarrollo de agentes de seguros de MKAddesh Holding.
+El Programa EQUITY es el sistema de desarrollo de agentes de seguros de Mkaddesh Holding.
 Está diseñado para agentes hispanos en EE.UU. que quieren construir un negocio de seguros
 propio, con contratos directos y sin depender de una agencia.
 
@@ -21,7 +21,7 @@ EQUITY tiene UNA línea de negocio principal:
 - Seguros Suplementarios (Washington National): indemnizaciones por accidente,
   hospitalización y enfermedades críticas.
 
-Líneas adicionales que los agentes de MKAddesh pueden trabajar, pero que NO son el foco de EQUITY:
+Líneas adicionales que los agentes de Mkaddesh pueden trabajar, pero que NO son el foco de EQUITY:
 - Seguros de Salud Primarios (ACA/Obamacare): válidos, pero no son el enfoque del programa.
 - Medicare: para mayores de 65 años, línea adicional fuera del programa principal.
 - Seguros de Vida: línea de producción válida de la agencia, pero no es el foco de EQUITY.
@@ -31,7 +31,7 @@ enfoque y la propuesta de valor del Programa EQUITY es exclusivamente seguros su
 con Washington National.
 
 Además incluye como beneficio: clases de inglés GRATIS especializadas para agentes de
-seguros — para que puedan llegar al mercado anglosajón, que es menos saturado que el hispano.
+seguros — para que puedan llegar al mercado americano, que es menos saturado que el hispano.
 
 ### Por qué es una oportunidad real
 
@@ -41,10 +41,10 @@ Los suplementarios no requieren estatus migratorio del cliente — solo ID del p
 Esto abre un mercado enorme de clientes que no pueden comprar ACA pero sí suplementarios.
 
 Los agentes en EQUITY tienen:
-- Contratos directos desde el primer día (no trabajan para MKAddesh, son su propia agencia)
+- Contratos directos desde el primer día (no trabajan para Mkaddesh, son su propia agencia)
 - El libro de negocios es del agente, no de la agencia
 - Bonificaciones por volumen y por reclutamiento de nuevos agentes
-- Acceso a la Academia MKAddesh con contenido de formación
+- Acceso a la Academia Mkaddesh con contenido de formación
 - Grupo de WhatsApp de EQUITY con el equipo
 - Clases de inglés especializadas gratuitas
 
@@ -54,15 +54,15 @@ Un agente cautivo trabaja exclusivamente para una sola compañía y bajo sus reg
 Si se va, pierde su cartera de clientes. No puede vender otros productos. No tiene libertad.
 
 Los agentes de EQUITY son completamente independientes:
-- Tienen contrato directo con Washington National — no con MKAddesh
+- Tienen contrato directo con Washington National — no con Mkaddesh
 - El libro de negocios es 100% del agente. Si mañana decide irse, se lleva sus clientes
 - Pueden trabajar con otras compañías sin restricción
 - No hay cláusulas de exclusividad ni penalizaciones por irse
-- MKAddesh es su agencia de apoyo, no su empleador
+- Mkaddesh es su agencia de apoyo, no su empleador
 
 Esta independencia es una de las diferencias más grandes respecto a otras agencias del mercado.
 En muchas agencias el agente trabaja para enriquecer a la agencia. En EQUITY, el agente
-construye su propio negocio con el respaldo de MKAddesh.
+construye su propio negocio con el respaldo de Mkaddesh.
 
 ### El Overview
 
@@ -84,7 +84,7 @@ Califica para ACA/Obamacare.
 
 LICENCIA 220 — Licencia General de Seguros:
 Igual que 215, califica para suplementarios y ACA.
-NOTA: La 220 NO se enseña en la Escuela de Licenciamiento de MKAddesh.
+NOTA: La 220 NO se enseña en la Escuela de Licenciamiento de Mkaddesh.
 Si alguien ya tiene la 220, puede ingresar al programa directamente.
 ✅ CAMINO: equity_con_lic → Formulario de contratación directo.
 
@@ -99,7 +99,7 @@ Esta licencia NO califica para vender suplementarios ni ACA.
 Para nosotros cuenta como "sin licencia de salud".
 PERO: es una ventaja — ya es agente, ya pasó por el proceso de licenciamiento.
 Solo necesita agregar la licencia de salud (215 o 240) a su cartera.
-La Escuela de Licenciamiento de MKAddesh tiene un camino específico para ellos.
+La Escuela de Licenciamiento de Mkaddesh tiene un camino específico para ellos.
 ⚠️ CAMINO: lic_214 → Escuela de Licenciamiento (comunicar como oportunidad, no como rechazo).
 
 ### Sin licencia
@@ -121,7 +121,7 @@ Para toda persona que quiera unirse al Programa EQUITY pero aún no tiene licenc
 
 ### Qué licencias enseña
 
-La Escuela de Licenciamiento de MKAddesh enseña ÚNICAMENTE:
+La Escuela de Licenciamiento de Mkaddesh enseña ÚNICAMENTE:
 - Licencia 215 — Agente de Salud y Vida
 - Licencia 240 — Licencia de Salud
 
@@ -192,7 +192,7 @@ esa línea para notificar correctamente.
 GERENTES DE LÍNEA ACTUALES:
 - Jimmy Arenas
 - Isidro González
-- Jamie Varona
+- Jamie Barona
 - Andy Salandy
 - Daniel Pulido
 
@@ -238,12 +238,12 @@ Con ellos tienes contrato directo desde el primer día."
 ### "¿Me quitan parte de las comisiones?"
 
 "No. Tu comisión es tuya completa — no hay recortes de agencia.
-El contrato es directo con Washington National, no con MKAddesh.
-MKAddesh es tu agencia de apoyo, no tu empleador."
+El contrato es directo con Washington National, no con Mkaddesh.
+Mkaddesh es tu agencia de apoyo, no tu empleador."
 
 ### "¿Tengo que pagar algo para entrar?"
 
-"Para ingresar al programa con licencia activa no hay costo de entrada.
+"Para ingresar al programa EQUITY con licencia activa no hay costo de entrada, solo debes tener tu contrato de Washington National a través de Mkaddesh.
 Si necesitas obtener tu licencia primero, la Escuela de Licenciamiento tiene un costo
 que el equipo te explica en detalle."
 
@@ -256,9 +256,9 @@ El reclutamiento es opcional y genera ingresos adicionales, pero no es obligator
 ### "¿Son cautivos?"
 
 "No, para nada. Los agentes de EQUITY son completamente independientes.
-Tu contrato es directo con Washington National — no con MKAddesh.
+Tu contrato es directo con Washington National — no con Mkaddesh.
 Tu libro de negocios es tuyo — si mañana decides irte, te llevas tus clientes contigo.
-No hay cláusulas de exclusividad ni penalizaciones. MKAddesh es tu agencia de apoyo,
+No hay cláusulas de exclusividad ni penalizaciones. Mkaddesh es tu agencia de apoyo,
 no tu empleador. Esa independencia es exactamente lo opuesto a ser cautivo."
 
 ### "¿Puedo trabajar desde cualquier estado?"
@@ -279,13 +279,13 @@ al que ya trabajan. Y como eres independiente, no tienes que dejar nada."
 
 ### "¿Venden vida también?"
 
-"Vida es una línea de producción válida dentro de MKAddesh — los agentes pueden venderla.
+"Vida es una línea de producción válida dentro de Mkaddesh — los agentes pueden venderla.
 Pero el foco principal del Programa EQUITY son los seguros suplementarios de Washington National.
 Si te interesa vida, el equipo te orienta sobre cómo funciona esa línea."
 
 ### "¿Venden ACA o Medicare?"
 
-"ACA y Medicare son líneas adicionales que los agentes de MKAddesh pueden trabajar.
+"ACA y Medicare son líneas adicionales que los agentes de Mkaddesh pueden trabajar.
 Pero el enfoque del Programa EQUITY es exclusivamente seguros suplementarios.
 El equipo te puede explicar cómo funciona cada línea si te interesa."
 
@@ -400,7 +400,7 @@ Ambetter paga diferente en Florida que en Texas, por ejemplo.
 
 ### Seguros de Vida
 
-Línea válida de producción para agentes de MKAddesh.
+Línea válida de producción para agentes de Mkaddesh.
 Las comisiones comienzan en el 80% y aumentan con la producción.
 No es el foco de EQUITY pero los agentes pueden trabajarla.
 El equipo explica los detalles de contratación.
